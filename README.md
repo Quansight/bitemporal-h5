@@ -23,12 +23,12 @@ The columns present in the table are as follows:
   This value is zero-indexed. The current largest transaction id should be
   written to the table's attributes as `max_transaction_id` (also uint64).
   Write operations should bump the `max_transaction_id` by one.
-* `transaction_time (float64)`: This is a timestamp (sec since epoch). Any metadata
+* `transaction_time (datetime64)`: This is a timestamp (sec since epoch). Any metadata
   about the timezones should be stored as a string attribute of the dataset as
   `transaction_time_zone`. This represents the time at which the data was
   recorded by the write operation. All rows with the same `transaction_id` should
   have the same value here.
-* `valid_time (float64)`: This is a timestamp (sec since epoch). Any metadata
+* `valid_time (datetime64)`: This is a timestamp (sec since epoch). Any metadata
   about the timetzones should be stored as a string attribute of the dataset as
   `valid_time_zone`. This is the primary axis of the time series. It represents
   the data stored in the `value` column.
@@ -43,9 +43,61 @@ Therefor an example numpy dtype with float values and a shape of `(1, 2, 3)` is:
 ```python
 np.dtype([
     ('transaction_id', '<f8'),
-    ('transaction_time', '<f8'),
-    ('valid_time', '<f8'),
+    ('transaction_time', '<M8'),
+    ('valid_time', '<M8'),
     ('value', '<f8', (1, 2, 3))
 ])
+```
+
+## Quickstart API
+The interface for writing to the bitemporal HDF5 storage is as follows:
+
+```python
+import bth5
+
+with bth5.open("/path/to/file.h5", "/path/to/dataset", "a+") as ds:
+    # all writes are staged into a single transaction and then
+    # written when the context exits. Transaction times and IDs
+    # are automatically applied. The first write call determines
+    # the dtype & shape of value, if the data set does not already
+    # exist.
+    ds.write(t1, p1)
+    ds.write(valid_time=t2, value=p2)
+    ds.write(valid_time=[t3, t4, t5], value=[p3, p4, p5])
+    ds.write((t6, p6))
+    ds.write([(t7, p7), (t8, p8)])
+```
+
+Reading from the data set should follow the normal numpy indexing:
+
+```python
+# opened in read-only mode
+>>> ds = bth5.open("/path/to/file.h5", "/path/to/dataset")
+>>> in_mem = ds[:]
+>>> in_mem.dtype
+np.dtype([
+    ('valid_time', '<M8'),
+    ('value', '<f8', (1, 2, 3))
+])
+```
+
+Note that when reading in this way, only the most recent transaction times
+for a given valid time is returned. Older data is filtered out. Additionally,
+users are able to filter based on transaction time and/or ID (and other columns)
+via the `filt` interface:
+
+```python
+>>> ds = bth5.open("/path/to/file.h5", "/path/to/dataset")
+>>> ds.filt['transaction_id<=4', 'transaction_time>=192']
+```
+
+This again should return the latest valid time and value which is present in the
+reduced dataset. Furthermore, there is an escape valve to reach the actual
+dataset as represented on-disk. This is the `raw` attribute, that returns
+a reference to the h5py dataset.
+
+```python
+>>> ds = bth5.open("/path/to/file.h5", "/path/to/dataset")
+>>> ds.raw
 ```
 
