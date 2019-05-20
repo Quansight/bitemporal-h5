@@ -5,6 +5,10 @@ import h5py
 import numpy as np
 
 
+NAT = np.datetime64('nat
+')
+
+
 def _ensure_groups(handle, path):
     """Makes sure a path exists, returning the final group object."""
     # this assumes the path is an abspath
@@ -42,6 +46,46 @@ class Dataset:
         self.path = path
         self.closed = True
         self._mode = self._handle = None
+        self._staged_data = None
+        self._dtype = None
+
+    def _dtype_from_file(self):
+        if self._dataset_name not in self._group:
+            return None
+        ds = self._group[self._dataset_name]
+        return ds.dtype
+
+    @property
+    def dtype(self):
+        # first, see if we have already computed a dtype
+        if self._dtype is not None:
+            return self._dtype
+        # next, try to get it from the HDF5 file
+        if self.closed:
+            with self:
+                dtype = self._dtype_from_file()
+        else:
+            dtype = self._dtype_from_file()
+        # next compute from data
+        if dtype is None:
+            if self._staged_data:
+                first_value = np.asarray(self._staged_data[0])
+                dtype = np.dtype([
+    ('transaction_id', np.uint64),
+    ('transaction_time', '<M8'),
+    ('valid_time', '<M8'),
+    ('value', first_value.dtype, first_value.shape)
+])
+            else:
+                raise RuntimeError("not enough information to compute dtype")
+        self._dtype = dtype
+        return dtype
+
+
+    @dtype.setter
+    def dtype(self, value):
+        # TODO: add verification that this has the proper format
+        self._dtype = value
 
     def open(self, mode="r", **kwargs):
         """Opens the file for various operations"""
@@ -57,12 +101,14 @@ class Dataset:
         self._mode = mode
         self._group_name, self._dataset_name = posixpath.split(self.path)
         self._group = _ensure_groups(self._handle, self._group_name)
+        if "w" in mode or "a" in mode:
+            self._staged_data = []
 
     def close(self):
         """Close the current file handle."""
         # write the staged data
         ds = self._group.require_dataset(self._dataset_name,
-                                                             dtype=self._data.dtype
+                                                             dtype=self.dtype
                                                              maxshape=(None,))
         # now close the file
         self._handle.close()
@@ -71,6 +117,7 @@ class Dataset:
         # self._mode does not need to be reset, so that the file can be reopened
         self._group_name = self._group = None
         self._dataset_name = self._dataset = None
+        self._staged_data = None
 
     def __enter__(self):
         if self.closed:
@@ -85,6 +132,7 @@ class Dataset:
         """Appends data to a dataset."""
         if self.closed:
             raise RuntimeError("dataset must be open to write data to it.")
+        self._staged_data.append((0, NAT, valid_time, value))
 
 
 def open(filename, path, mode="r", **kwargs):
