@@ -1,12 +1,12 @@
 """The main bitemporal data set interface"""
+import datetime
 import posixpath
 
 import h5py
 import numpy as np
 
 
-NAT = np.datetime64('nat
-')
+NAT = np.datetime64("nat")
 
 
 def _ensure_groups(handle, path):
@@ -40,8 +40,10 @@ class Dataset:
             The path to the dataset within the HDF5 file.
         """
         if not posixpath.isabs(path):
-            raise ValueError(path + "must be a posix absolute path, i.e. "
-                             "start with a leading '/'.")
+            raise ValueError(
+                path + "must be a posix absolute path, i.e. "
+                "start with a leading '/'."
+            )
         self.filename = filename
         self.path = path
         self.closed = True
@@ -70,17 +72,18 @@ class Dataset:
         if dtype is None:
             if self._staged_data:
                 first_value = np.asarray(self._staged_data[0])
-                dtype = np.dtype([
-    ('transaction_id', np.uint64),
-    ('transaction_time', '<M8'),
-    ('valid_time', '<M8'),
-    ('value', first_value.dtype, first_value.shape)
-])
+                dtype = np.dtype(
+                    [
+                        ("transaction_id", np.uint64),
+                        ("transaction_time", np.datetime64),
+                        ("valid_time", np.datetime64),
+                        ("value", first_value.dtype, first_value.shape),
+                    ]
+                )
             else:
                 raise RuntimeError("not enough information to compute dtype")
         self._dtype = dtype
         return dtype
-
 
     @dtype.setter
     def dtype(self, value):
@@ -91,7 +94,7 @@ class Dataset:
         """Opens the file for various operations"""
         # check that we should open the dataset
         if not self.closed:
-            if self._mode == mode
+            if self._mode == mode:
                 return  # already open in the same mode!
             else:
                 raise IOError("attempted to reopen dataset in new mode")
@@ -107,9 +110,25 @@ class Dataset:
     def close(self):
         """Close the current file handle."""
         # write the staged data
-        ds = self._group.require_dataset(self._dataset_name,
-                                                             dtype=self.dtype
-                                                             maxshape=(None,))
+        if self._staged_data:
+            ds = self._group.require_dataset(
+                self._dataset_name, dtype=self.dtype, maxshape=(None,),
+                shape=(0,),
+            )
+            n = len(self._staged_data)
+            data = np.empty(n, dtype=self.dtype)
+            data[:] = self._staged_data
+            # set transaction id
+            tid = ds.attrs.get("transaction_id", -1) + 1
+            data["transaction_id"][:] = tid
+            # set transaction time
+            now = datetime.datetime.utcnow()
+            data["transaction_time"][:] = np.datetime64(now)
+            # write dataset
+            m = ds.len()
+            ds.resize(m + n)
+            ds[m:] = data
+            ds.attrs.modify("transaction_id", tid)
         # now close the file
         self._handle.close()
         self._handle = None
