@@ -42,7 +42,7 @@ Therefor an example numpy dtype with float values and a shape of `(1, 2, 3)` is:
 
 ```python
 np.dtype([
-    ('transaction_id', '<f8'),
+    ('transaction_id', '<u8'),
     ('transaction_time', '<M8'),
     ('valid_time', '<M8'),
     ('value', '<f8', (1, 2, 3))
