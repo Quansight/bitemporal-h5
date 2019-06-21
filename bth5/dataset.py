@@ -71,12 +71,12 @@ class Dataset:
         # next compute from data
         if dtype is None:
             if self._staged_data:
-                first_value = np.asarray(self._staged_data[0])
+                first_value = np.asarray(self._staged_data[0][3])
                 dtype = np.dtype(
                     [
-                        ("transaction_id", np.uint64),
-                        ("transaction_time", np.datetime64),
-                        ("valid_time", np.datetime64),
+                        ("transaction_id", '<u8'),
+                        ("transaction_time", '<M8[us]'),
+                        ("valid_time", '<M8[us]'),
                         ("value", first_value.dtype, first_value.shape),
                     ]
                 )
@@ -126,7 +126,7 @@ class Dataset:
             data["transaction_time"][:] = np.datetime64(now)
             # write dataset
             m = ds.len()
-            ds.resize(m + n)
+            ds.resize((m + n,))
             ds[m:] = data
             ds.attrs.modify("transaction_id", tid)
         # now close the file
@@ -147,10 +147,11 @@ class Dataset:
     def __exit__(self, exc_type, exc_value, traceback):
         self.close()
 
-    def write(self, valid_time, value=None):
+    def write(self, valid_time, value):
         """Appends data to a dataset."""
         if self.closed:
             raise RuntimeError("dataset must be open to write data to it.")
+        
         self._staged_data.append((0, NAT, valid_time, value))
 
 
