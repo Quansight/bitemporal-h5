@@ -122,8 +122,8 @@ class Dataset:
             tid = ds.attrs.get("transaction_id", -1) + 1
             data["transaction_id"][:] = tid
             # set transaction time
-            now = datetime.datetime.utcnow()
-            data["transaction_time"][:] = np.datetime64(now)
+            now = np.datetime64(datetime.datetime.utcnow())
+            data["transaction_time"][:] = now
             # write dataset
             m = ds.len()
             ds.resize((m + n,))
@@ -149,10 +149,17 @@ class Dataset:
 
     def write(self, valid_time, value):
         """Appends data to a dataset."""
-        if self.closed:
+        if self.closed or self._mode not in ("w", "a"):
             raise RuntimeError("dataset must be open to write data to it.")
         
-        self._staged_data.append((0, NAT, valid_time, value))
+        self._staged_data.append((-1, NAT, valid_time, value))
+
+    def __getitem__(self, k):
+        if self.closed or self._mode != "r":
+            raise RuntimeError("dataset must be open in read mode to read data from it.")
+
+        return self._handle[self._group_name][self._dataset_name][k]
+    
 
 
 def open(filename, path, mode="r", **kwargs):
