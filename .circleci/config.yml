@@ -9,10 +9,15 @@ jobs:
     steps:
       - checkout
 
+      - run:
+          name: Download HDF5
+          command: |
+            wget https://github.com/Quansight/h5py/archive/datetime64.zip
+
+
       - restore_cache:
           keys:
-            - v1-dependencies-{{ checksum "pyproject.toml" }}
-            - v1-dependencies-
+            - v1-dependencies-{{ checksum "pyproject.toml" }}-{{ checksum "datetime64.zip" }}
 
       - run:
           name: install dependencies
@@ -20,15 +25,15 @@ jobs:
             sudo apt-get update && sudo apt-get install libhdf5-10* libhdf5-dev
             python3 -m venv venv
             . venv/bin/activate
-            pip install https://github.com/Quansight/h5py/archive/datetime64.zip
+            pip install ./datetime64.zip
             pip install pytest
             pip install -e .
 
       - save_cache:
           paths:
             - ./venv
-          key: v1-dependencies-{{ checksum "pyproject.toml" }}
-      
+          key: v1-dependencies-{{ checksum "pyproject.toml" }}-{{ checksum "datetime64.zip" }}
+
       - run:
           name: run tests
           command: |
