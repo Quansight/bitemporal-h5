@@ -7,6 +7,8 @@ import numpy as np
 
 
 NAT = np.datetime64("nat")
+TIME_DTYPE = np.dtype("<M8[us]")
+h5py.register_dtype(TIME_DTYPE)
 
 
 def _ensure_groups(handle, path):
@@ -75,8 +77,8 @@ class Dataset:
                 dtype = np.dtype(
                     [
                         ("transaction_id", '<u8'),
-                        ("transaction_time", '<M8[us]'),
-                        ("valid_time", '<M8[us]'),
+                        ("transaction_time", TIME_DTYPE),
+                        ("valid_time", TIME_DTYPE),
                         ("value", first_value.dtype, first_value.shape),
                     ]
                 )
