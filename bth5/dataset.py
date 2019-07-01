@@ -187,7 +187,7 @@ class Dataset:
 
     def __getitem__(self, k):
         if self.closed or not self._dataset:
-            raise RuntimeError("dataset must be open in read mode and have been written to to read data from it.")
+            raise RuntimeError("Either dataset is closed or had no data written to it.")
 
         index_dtype = _check_index_dtype(k)
 
