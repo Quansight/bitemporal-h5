@@ -175,7 +175,7 @@ class Dataset:
                 raise NotImplementedError("Stepping is not supported at the moment.")
             
             start_idx = np.searchsorted(sort_field, k.start) if k.start is not None else None
-            end_idx = np.searchsorted(sort_field, k.stop) if k.stop is not None else None
+            end_idx = np.searchsorted(sort_field, k.stop, side="right") if k.stop is not None else None
 
             return self._dataset[start_idx:end_idx]
         else:
