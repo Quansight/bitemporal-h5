@@ -1,6 +1,7 @@
 """The main bitemporal data set interface"""
 import datetime
 import posixpath
+import numbers
 
 import h5py
 import numpy as np
@@ -14,7 +15,7 @@ h5py.register_dtype(TIME_DTYPE)
 def _ensure_groups(handle, path):
     """Makes sure a path exists, returning the final group object."""
     # this assumes the path is an abspath
-    group = handle  # the file handle is the root group.
+    group = handle['/']  # the file handle is the root group.
     heirarchy = path[1:].split("/")
     for name in heirarchy:
         if not name:
@@ -25,6 +26,12 @@ def _ensure_groups(handle, path):
         else:
             group = group.create_group(name)
     return group
+
+def _check_index_dtype(k):
+    if not isinstance(k, slice):
+        return np.asarray(k).dtype
+    arr = [v for v in (k.start, k.stop, k.step) if v is not None]
+    return _check_index_dtype(arr)
 
 
 class Dataset:
@@ -108,6 +115,9 @@ class Dataset:
         self._group = _ensure_groups(self._handle, self._group_name)
         if "w" in mode or "a" in mode:
             self._staged_data = []
+        self._dataset = None
+        if self._dataset_name in self._group:
+            self._dataset = self._group[self._dataset_name]
 
     def close(self):
         """Close the current file handle."""
@@ -116,7 +126,7 @@ class Dataset:
             ds = self._group.require_dataset(
                 self._dataset_name, dtype=self.dtype, maxshape=(None,),
                 shape=(0,),
-            )
+            ) if self._dataset is None else self._dataset
             n = len(self._staged_data)
             data = np.empty(n, dtype=self.dtype)
             data[:] = self._staged_data
@@ -131,6 +141,7 @@ class Dataset:
             ds.resize((m + n,))
             ds[m:] = data
             ds.attrs.modify("transaction_id", tid)
+            self._dataset = ds
         # now close the file
         self._handle.close()
         self._handle = None
@@ -156,12 +167,37 @@ class Dataset:
         
         self._staged_data.append((-1, NAT, valid_time, value))
 
-    def __getitem__(self, k):
-        if self.closed or self._mode != "r":
-            raise RuntimeError("dataset must be open in read mode to read data from it.")
+    def _index_by(self, field, k):
+        sort_field = self._dataset[field]
+        
+        if isinstance(k, slice):
+            if k.step is not None:
+                raise NotImplementedError("Stepping is not supported at the moment.")
+            
+            start_idx = np.searchsorted(sort_field, k.start) if k.start is not None else None
+            end_idx = np.searchsorted(sort_field, k.stop) if k.stop is not None else None
 
-        return self._handle[self._group_name][self._dataset_name][k]
-    
+            return self._dataset[start_idx:end_idx]
+        else:
+            possible_idx = np.searchsorted(sort_field, k)
+            if sort_field[possible_idx] == k:
+                return self._dataset[possible_idx]
+            else:
+                raise NotImplementedError("The specified date was not found in the dataset, and interpolation is not supported.")
+
+    def __getitem__(self, k):
+        if self.closed or not self._dataset:
+            raise RuntimeError("dataset must be open in read mode and have been written to to read data from it.")
+
+        index_dtype = _check_index_dtype(k)
+
+        if index_dtype.kind in 'ui':
+            return self._dataset[k]
+
+        if not index_dtype.kind == 'M':
+            raise TypeError("The index must be datetime64 or int.")
+
+        return self._index_by("valid_time", k)
 
 
 def open(filename, path, mode="r", **kwargs):
