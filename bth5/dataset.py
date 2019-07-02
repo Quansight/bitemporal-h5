@@ -115,18 +115,19 @@ class Dataset:
         self._group = _ensure_groups(self._handle, self._group_name)
         if "w" in mode or "a" in mode:
             self._staged_data = []
-        self._dataset = None
-        if self._dataset_name in self._group:
-            self._dataset = self._group[self._dataset_name]
+
+    @property
+    def _dataset(self):
+        if not self._dataset_name in self._group:
+            self._group.create_dataset(self._dataset_name, dtype = self.dtype, maxshape=(None,), shape=(0,))
+
+        return self._group[self._dataset_name]
 
     def close(self):
         """Close the current file handle."""
         # write the staged data
         if self._staged_data:
-            ds = self._group.require_dataset(
-                self._dataset_name, dtype=self.dtype, maxshape=(None,),
-                shape=(0,),
-            ) if self._dataset is None else self._dataset
+            ds = self._dataset
             n = len(self._staged_data)
             data = np.empty(n, dtype=self.dtype)
             data[:] = self._staged_data
@@ -141,14 +142,13 @@ class Dataset:
             ds.resize((m + n,))
             ds[m:] = data
             ds.attrs.modify("transaction_id", tid)
-            self._dataset = ds
         # now close the file
         self._handle.close()
         self._handle = None
         self.closed = True
         # self._mode does not need to be reset, so that the file can be reopened
         self._group_name = self._group = None
-        self._dataset_name = self._dataset = None
+        self._dataset_name = None
         self._staged_data = None
 
     def __enter__(self):
