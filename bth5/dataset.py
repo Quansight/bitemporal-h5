@@ -165,7 +165,10 @@ class Dataset:
         if self.closed or self._mode not in ("w", "a"):
             raise RuntimeError("dataset must be open to write data to it.")
 
-        last_valid_time = self._last_valid_time
+        try:
+            last_valid_time = self._last_valid_time
+        except RuntimeError:
+            last_valid_time = None
         
         if last_valid_time is not None and valid_time <= last_valid_time:
             raise ValueError("Out-of-order valid_time specified.")
