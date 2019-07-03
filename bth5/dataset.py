@@ -164,15 +164,56 @@ class Dataset:
         """Appends data to a dataset."""
         if self.closed or self._mode not in ("w", "a"):
             raise RuntimeError("dataset must be open to write data to it.")
+
+        last_valid_time = self._last_valid_time
         
-        self._staged_data.append((-1, NAT, valid_time, value))
+        if last_valid_time is not None and valid_time <= last_valid_time:
+            raise ValueError("Out-of-order valid_time specified.")
+
+        data = (-1, NAT, valid_time, value)
+
+        try:
+            dtype = self.dtype
+        except RuntimeError:
+            value = np.asarray(value)
+            dtype = np.dtype(
+                        [
+                            ("transaction_id", '<u8'),
+                            ("transaction_time", TIME_DTYPE),
+                            ("valid_time", TIME_DTYPE),
+                            ("value", value.dtype, value.shape),
+                        ]
+            )
+        
+        self._staged_data.append(np.array(data, dtype=dtype)[()])
+
+    @property
+    def _last_valid_time(self):
+        last_record = self._staged_data[-1] if self._staged_data else (
+            self._dataset[-1] if self._dataset is not None and self._dataset.shape[0] != 0
+            else None
+        )
+
+        return last_record["valid_time"] if last_record is not None else None
+
+    def interpolate_value(self, time_points):
+        valid_times = self._dataset["valid_time"]
+        time_points = np.asarray(time_points).astype(TIME_DTYPE)
+        min_time, max_time = np.min(time_points), np.max(time_points)
+        min_idx, max_idx = np.searchsorted(valid_times, min_time, side="right") - 1, np.searchsorted(valid_times, max_time, side="left") + 1
+        considered_records = self[min_idx:max_idx]
+
+        x = considered_records["valid_time"].view(np.int64)
+        y = considered_records["value"]
+
+        return np.interp(time_points.view(np.int64), x, y)
 
     def _index_by(self, field, k):
         sort_field = self._dataset[field]
         
         if isinstance(k, slice):
             if k.step is not None:
-                raise NotImplementedError("Stepping is not supported at the moment.")
+                raise ValueError("Stepping is not supported with indexing, use interpolate_value.")
             
             start_idx = np.searchsorted(sort_field, k.start) if k.start is not None else None
             end_idx = np.searchsorted(sort_field, k.stop, side="right") if k.stop is not None else None
@@ -183,7 +224,7 @@ class Dataset:
             if sort_field[possible_idx] == k:
                 return self._dataset[possible_idx]
             else:
-                raise NotImplementedError("The specified date was not found in the dataset, and interpolation is not supported.")
+                raise ValueError("The specified date was not found in the dataset, use interpolate_value.")
 
     def __getitem__(self, k):
         if self.closed or not self._dataset:

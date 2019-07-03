@@ -1,6 +1,7 @@
 """tests basic dataset properties"""
 import numpy as np
 import bth5
+import pytest
 
 
 def test_write(tmp_path):
@@ -17,6 +18,20 @@ def test_write(tmp_path):
         records = ds[np.datetime64('2018-06-21 12:26:47'):np.datetime64('2018-06-21 12:26:49')]
         assert_recordvalidequal(records[0], np.datetime64('2018-06-21 12:26:47'), 2.0)
         assert_recordvalidequal(records[1], np.datetime64('2018-06-21 12:26:48'), 1.0)
+
+def test_invalid_order(tmp_path):
+    with bth5.open(tmp_path / 'example.h5', "/example", "w") as ds, \
+        pytest.raises(ValueError):
+        ds.write(np.datetime64('2018-06-21 12:26:48'), 2.0)
+        ds.write(np.datetime64('2018-06-21 12:26:47'), 1.0)
+
+def test_interpolate(tmp_path):
+    with bth5.open(tmp_path / 'example.h5', "/example", "w") as ds:
+        ds.write(np.datetime64('2018-06-21 12:26:47'), 2.0)
+        ds.write(np.datetime64('2018-06-21 12:26:49'), 1.0)
+
+    with bth5.open(tmp_path / 'example.h5', "/example", "r") as ds:
+        assert ds.interpolate_value('2018-06-21 12:26:48') == 1.5
 
 def assert_recordvalidequal(record, valid_time, value):
     assert record["valid_time"] == valid_time
