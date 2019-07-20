@@ -2,6 +2,7 @@
 import datetime
 import posixpath
 import numbers
+import functools
 
 import h5py
 import numpy as np
@@ -15,7 +16,7 @@ h5py.register_dtype(TIME_DTYPE)
 def _ensure_groups(handle, path):
     """Makes sure a path exists, returning the final group object."""
     # this assumes the path is an abspath
-    group = handle['/']  # the file handle is the root group.
+    group = handle["/"]  # the file handle is the root group.
     heirarchy = path[1:].split("/")
     for name in heirarchy:
         if not name:
@@ -27,6 +28,7 @@ def _ensure_groups(handle, path):
             group = group.create_group(name)
     return group
 
+
 def _check_index_dtype(k):
     if not isinstance(k, slice):
         return np.asarray(k).dtype
@@ -34,12 +36,27 @@ def _check_index_dtype(k):
     return _check_index_dtype(arr)
 
 
+class _Indexer:
+    def __init__(self, reader):
+        self._reader = reader
+
+    def __get__(self, obj, otype=None):
+        if obj is not None:
+            reader = self._reader.__get__(obj, otype)
+            return type(self)(reader)
+
+        return self
+
+    def __getitem__(self, k):
+        return self._reader(k)
+
+
 class Dataset:
     """Represents a bitemporal dataset as a memory-mapped structure
     stored in HDF5.
     """
 
-    def __init__(self, filename, path):
+    def __init__(self, filename, path, value_dtype=None):
         """
         Parameters
         ----------
@@ -58,7 +75,15 @@ class Dataset:
         self.closed = True
         self._mode = self._handle = None
         self._staged_data = None
-        self._dtype = None
+        if value_dtype is not None:
+            self.dtype = np.dtype(
+                [
+                    ("transaction_id", "<u8"),
+                    ("transaction_time", TIME_DTYPE),
+                    ("valid_time", TIME_DTYPE),
+                    ("value", value_dtype),
+                ]
+            )
 
     def _dtype_from_file(self):
         if self._dataset_name not in self._group:
@@ -79,18 +104,7 @@ class Dataset:
             dtype = self._dtype_from_file()
         # next compute from data
         if dtype is None:
-            if self._staged_data:
-                first_value = np.asarray(self._staged_data[0][3])
-                dtype = np.dtype(
-                    [
-                        ("transaction_id", '<u8'),
-                        ("transaction_time", TIME_DTYPE),
-                        ("valid_time", TIME_DTYPE),
-                        ("value", first_value.dtype, first_value.shape),
-                    ]
-                )
-            else:
-                raise RuntimeError("not enough information to compute dtype")
+            raise RuntimeError("Must specify dtype on first transaction.")
         self._dtype = dtype
         return dtype
 
@@ -119,7 +133,9 @@ class Dataset:
     @property
     def _dataset(self):
         if not self._dataset_name in self._group:
-            self._group.create_dataset(self._dataset_name, dtype = self.dtype, maxshape=(None,), shape=(0,))
+            self._group.create_dataset(
+                self._dataset_name, dtype=self.dtype, maxshape=(None,), shape=(0,)
+            )
 
         return self._group[self._dataset_name]
 
@@ -131,6 +147,9 @@ class Dataset:
             n = len(self._staged_data)
             data = np.empty(n, dtype=self.dtype)
             data[:] = self._staged_data
+            # 1. Mergesort is stable
+            # 2. Faster on almost sorted data
+            sorted_idx = np.argsort(data["valid_time"], kind="mergesort")
             # set transaction id
             tid = ds.attrs.get("transaction_id", -1) + 1
             data["transaction_id"][:] = tid
@@ -140,7 +159,7 @@ class Dataset:
             # write dataset
             m = ds.len()
             ds.resize((m + n,))
-            ds[m:] = data
+            ds[m:] = data[sorted_idx]
             ds.attrs.modify("transaction_id", tid)
         # now close the file
         self._handle.close()
@@ -165,61 +184,44 @@ class Dataset:
         if self.closed or self._mode not in ("w", "a"):
             raise RuntimeError("dataset must be open to write data to it.")
 
-        try:
-            last_valid_time = self._last_valid_time
-        except RuntimeError:
-            last_valid_time = None
-        
-        if last_valid_time is not None and valid_time <= last_valid_time:
-            raise ValueError("Out-of-order valid_time specified.")
-
         data = (-1, NAT, valid_time, value)
+        self._staged_data.append(data)
 
-        try:
-            dtype = self.dtype
-        except RuntimeError:
-            value = np.asarray(value)
-            dtype = np.dtype(
-                        [
-                            ("transaction_id", '<u8'),
-                            ("transaction_time", TIME_DTYPE),
-                            ("valid_time", TIME_DTYPE),
-                            ("value", value.dtype, value.shape),
-                        ]
-            )
-        
-        self._staged_data.append(np.array(data, dtype=dtype)[()])
-
-    @property
-    def _last_valid_time(self):
-        last_record = self._staged_data[-1] if self._staged_data else (
-            self._dataset[-1] if self._dataset is not None and self._dataset.shape[0] != 0
-            else None
-        )
-
-        return last_record["valid_time"] if last_record is not None else None
-
-    def interpolate_value(self, time_points):
+    def interpolate_values(self, time_points):
         valid_times = self._dataset["valid_time"]
         time_points = np.asarray(time_points).astype(TIME_DTYPE)
         min_time, max_time = np.min(time_points), np.max(time_points)
-        min_idx, max_idx = np.searchsorted(valid_times, min_time, side="right") - 1, np.searchsorted(valid_times, max_time, side="left") + 1
-        considered_records = self[min_idx:max_idx]
+        min_idx, max_idx = (
+            np.searchsorted(valid_times, min_time, side="right") - 1,
+            np.searchsorted(valid_times, max_time, side="left") + 1,
+        )
+        considered_records = self._dataset[min_idx:max_idx]
 
         x = considered_records["valid_time"].view(np.int64)
         y = considered_records["value"]
 
         return np.interp(time_points.view(np.int64), x, y)
 
-    def _index_by(self, field, k):
+    def _index_by(self, field, k, multi=False):
         sort_field = self._dataset[field]
-        
+
+        if multi and not isinstance(k, slice):
+            k = slice(k, k, None)
+
         if isinstance(k, slice):
             if k.step is not None:
-                raise ValueError("Stepping is not supported with indexing, use interpolate_value.")
-            
-            start_idx = np.searchsorted(sort_field, k.start) if k.start is not None else None
-            end_idx = np.searchsorted(sort_field, k.stop, side="right") if k.stop is not None else None
+                raise ValueError(
+                    "Stepping is not supported with indexing, use interpolate_values."
+                )
+
+            start_idx = (
+                np.searchsorted(sort_field, k.start) if k.start is not None else None
+            )
+            end_idx = (
+                np.searchsorted(sort_field, k.stop, side="right")
+                if k.stop is not None
+                else None
+            )
 
             return self._dataset[start_idx:end_idx]
         else:
@@ -227,25 +229,28 @@ class Dataset:
             if sort_field[possible_idx] == k:
                 return self._dataset[possible_idx]
             else:
-                raise ValueError("The specified date was not found in the dataset, use interpolate_value.")
+                raise ValueError(
+                    "The specified date was not found in the dataset, use interpolate_value."
+                )
 
-    def __getitem__(self, k):
-        if self.closed or not self._dataset:
-            raise RuntimeError("Either dataset is closed or had no data written to it.")
+    def _construct_indexer(key, multi=False):
+        def reader(self, k):
+            return self._index_by(key, k, multi=multi)
 
-        index_dtype = _check_index_dtype(k)
+        return _Indexer(reader)
 
-        if index_dtype.kind in 'ui':
-            return self._dataset[k]
+    valid_time_idx = _construct_indexer("valid_time")
+    transaction_time_idx = _construct_indexer("transaction_time", multi=True)
+    transaction_id_idx = _construct_indexer("transaction_id", multi=True)
 
-        if not index_dtype.kind == 'M':
-            raise TypeError("The index must be datetime64 or int.")
+    def _record_idx(self, k):
+        return self._dataset[k]
 
-        return self._index_by("valid_time", k)
+    record_idx = _Indexer(_record_idx)
 
 
-def open(filename, path, mode="r", **kwargs):
+def open(filename, path, mode="r", value_dtype=None, **kwargs):
     """Opens a bitemporal HDF5 dataset."""
-    ds = Dataset(filename, path)
+    ds = Dataset(filename, path, value_dtype=value_dtype)
     ds.open(mode, **kwargs)
     return ds
