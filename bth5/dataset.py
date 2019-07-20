@@ -8,6 +8,41 @@ import h5py
 import numpy as np
 
 
+def _deduplicate(ids, dates):
+    a = {}
+    b = []
+
+    j = np.intp(0)
+    for i in range(len(ids)):
+        tid, date = ids[i], dates[i]
+
+        if date in a:
+            old_idx = a[date]
+            b[old_idx] = i
+            a[date] = j
+        else:
+            b.append(i)
+            a[date] = j
+            j += 1
+
+    ret = np.array(b, dtype=np.intp)
+    np.sort(ret, kind="mergesort")
+    return ret
+
+
+def _wrap_deduplicate(f):
+    @functools.wraps(f)
+    def wrapped(*a, **kw):
+        ret = f(*a, **kw)
+
+        if ret.ndim > 0:
+            dedup_ids = _deduplicate(ret["transaction_id"], ret["valid_time"])
+            ret = ret[dedup_ids]
+        return ret
+
+    return wrapped
+
+
 NAT = np.datetime64("nat")
 TIME_DTYPE = np.dtype("<M8[us]")
 h5py.register_dtype(TIME_DTYPE)
@@ -76,7 +111,7 @@ class Dataset:
         self._mode = self._handle = None
         self._staged_data = None
         if value_dtype is not None:
-            self.dtype = np.dtype(
+            self._dtype = np.dtype(
                 [
                     ("transaction_id", "<u8"),
                     ("transaction_time", TIME_DTYPE),
@@ -84,6 +119,8 @@ class Dataset:
                     ("value", value_dtype),
                 ]
             )
+        else:
+            self._dtype = None
 
     def _dtype_from_file(self):
         if self._dataset_name not in self._group:
@@ -202,6 +239,7 @@ class Dataset:
 
         return np.interp(time_points.view(np.int64), x, y)
 
+    @_wrap_deduplicate
     def _index_by(self, field, k, multi=False):
         sort_field = self._dataset[field]
 
