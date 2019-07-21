@@ -224,11 +224,11 @@ class Dataset:
         data = (-1, NAT, valid_time, value)
         self._staged_data.append(data)
 
-    def interpolate_values(self, valid_times):
+    def interpolate_values(self, interp_times):
         """Interpolates the values at the given valid times."""
         valid_times = self._dataset["valid_time"]
-        valid_times = np.asarray(valid_times).astype(TIME_DTYPE)
-        min_time, max_time = np.min(valid_times), np.max(valid_times)
+        interp_times = np.asarray(interp_times).astype(TIME_DTYPE)
+        min_time, max_time = np.min(interp_times), np.max(interp_times)
         min_idx, max_idx = (
             np.searchsorted(valid_times, min_time, side="right") - 1,
             np.searchsorted(valid_times, max_time, side="left") + 1,
@@ -238,7 +238,7 @@ class Dataset:
         x = considered_records["valid_time"].view(np.int64)
         y = considered_records["value"]
 
-        return np.interp(valid_times.view(np.int64), x, y)
+        return np.interp(interp_times.view(np.int64), x, y)
 
     @_wrap_deduplicate
     def _index_by(self, field, k, multi=False):
