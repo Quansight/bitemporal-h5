@@ -224,10 +224,11 @@ class Dataset:
         data = (-1, NAT, valid_time, value)
         self._staged_data.append(data)
 
-    def interpolate_values(self, time_points):
+    def interpolate_values(self, valid_times):
+        """Interpolates the values at the given valid times."""
         valid_times = self._dataset["valid_time"]
-        time_points = np.asarray(time_points).astype(TIME_DTYPE)
-        min_time, max_time = np.min(time_points), np.max(time_points)
+        valid_times = np.asarray(valid_times).astype(TIME_DTYPE)
+        min_time, max_time = np.min(valid_times), np.max(valid_times)
         min_idx, max_idx = (
             np.searchsorted(valid_times, min_time, side="right") - 1,
             np.searchsorted(valid_times, max_time, side="left") + 1,
@@ -237,7 +238,7 @@ class Dataset:
         x = considered_records["valid_time"].view(np.int64)
         y = considered_records["value"]
 
-        return np.interp(time_points.view(np.int64), x, y)
+        return np.interp(valid_times.view(np.int64), x, y)
 
     @_wrap_deduplicate
     def _index_by(self, field, k, multi=False):
@@ -278,8 +279,11 @@ class Dataset:
         return _Indexer(reader)
 
     valid_time_idx = _construct_indexer("valid_time")
+    valid_time_idx.__doc__ = """Indexes into the dataset by valid time."""
     transaction_time_idx = _construct_indexer("transaction_time", multi=True)
+    transaction_time_idx.__doc__ = """Indexes into the dataset by transaction time."""
     transaction_id_idx = _construct_indexer("transaction_id", multi=True)
+    transaction_id_idx.__doc__ = """Indexes into the dataset by transaction ID."""
 
     def _record_idx(self, k):
         return self._dataset[k]
