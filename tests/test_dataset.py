@@ -19,17 +19,17 @@ def test_write(tmp_path):
             ds.record_idx[1], np.datetime64("2018-06-21 12:26:48"), 1.0
         )
         assert_recordvalidequal(
-            ds.valid_time_idx[np.datetime64("2018-06-21 12:26:47")],
+            ds.valid_times[np.datetime64("2018-06-21 12:26:47")],
             np.datetime64("2018-06-21 12:26:47"),
             2.0,
         )
         assert_recordvalidequal(
-            ds.valid_time_idx[np.datetime64("2018-06-21 12:26:48")],
+            ds.valid_times[np.datetime64("2018-06-21 12:26:48")],
             np.datetime64("2018-06-21 12:26:48"),
             1.0,
         )
 
-        records = ds.valid_time_idx[
+        records = ds.valid_times[
             np.datetime64("2018-06-21 12:26:47") : np.datetime64("2018-06-21 12:26:49")
         ]
         assert_recordvalidequal(records[0], np.datetime64("2018-06-21 12:26:47"), 2.0)
@@ -75,7 +75,7 @@ def test_deduplication(tmp_path):
         ds.write(np.datetime64("2018-06-21 12:26:51"), 1.0)
 
     with bth5.open(tmp_path / "example.h5", "/example", "r") as ds:
-        records = ds.valid_time_idx[
+        records = ds.valid_times[
             np.datetime64("2018-06-21 12:26:47") : np.datetime64("2018-06-21 12:26:51")
         ]
 

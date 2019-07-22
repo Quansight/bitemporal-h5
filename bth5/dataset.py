@@ -26,7 +26,7 @@ def _deduplicate(ids, dates):
             j += 1
 
     ret = np.array(b, dtype=np.intp)
-    np.sort(ret, kind="mergesort")
+    ret.sort(kind="mergesort")
     return ret
 
 
@@ -278,12 +278,12 @@ class Dataset:
 
         return _Indexer(reader)
 
-    valid_time_idx = _construct_indexer("valid_time")
-    valid_time_idx.__doc__ = """Indexes into the dataset by valid time."""
-    transaction_time_idx = _construct_indexer("transaction_time", multi=True)
-    transaction_time_idx.__doc__ = """Indexes into the dataset by transaction time."""
-    transaction_id_idx = _construct_indexer("transaction_id", multi=True)
-    transaction_id_idx.__doc__ = """Indexes into the dataset by transaction ID."""
+    valid_times = _construct_indexer("valid_time")
+    valid_times.__doc__ = """Indexes into the dataset by valid time."""
+    transaction_times = _construct_indexer("transaction_time", multi=True)
+    transaction_times.__doc__ = """Indexes into the dataset by transaction time."""
+    transactions = _construct_indexer("transaction_id", multi=True)
+    transactions.__doc__ = """Indexes into the dataset by transaction ID."""
 
     def _record_idx(self, k):
         return self._dataset[k]
