@@ -114,7 +114,6 @@ class Dataset:
             self._dtype = np.dtype(
                 [
                     ("transaction_id", "<u8"),
-                    ("transaction_time", TIME_DTYPE),
                     ("valid_time", TIME_DTYPE),
                     ("value", value_dtype),
                 ]
@@ -169,26 +168,40 @@ class Dataset:
 
     def close(self):
         """Close the current file handle."""
+        ds = self._dataset
+        # Modify transaction ID index
+        if "transaction_index" not in ds.attrs:
+            tidx_dt = np.dtype(
+                [
+                    ("transaction_time", TIME_DTYPE),
+                    ("start_valid_time", TIME_DTYPE),
+                    ("end_valid_time", TIME_DTYPE),
+                    ("start_idx", "<u8"),
+                    ("end_idx", "<u8")
+                ]
+            )
+            ds.attrs["transaction_index"] = np.empty((0,), dtype=tidx_dt)
+
         # write the staged data
         if self._staged_data:
-            ds = self._dataset
             n = len(self._staged_data)
+            tidx = ds.attrs["transaction_index"]
             data = np.empty(n, dtype=self.dtype)
             data[:] = self._staged_data
             # 1. Mergesort is stable
             # 2. Faster on almost sorted data
             sorted_idx = np.argsort(data["valid_time"], kind="mergesort")
             # set transaction id
-            tid = ds.attrs.get("transaction_id", -1) + 1
+            tid = len(tidx)
             data["transaction_id"][:] = tid
-            # set transaction time
-            now = np.datetime64(datetime.datetime.utcnow())
-            data["transaction_time"][:] = now
             # write dataset
             m = ds.len()
             ds.resize((m + n,))
             ds[m:] = data[sorted_idx]
-            ds.attrs.modify("transaction_id", tid)
+            tidx.resize((tid + 1,))
+            now = np.datetime64(datetime.datetime.utcnow())
+            tidx[-1] = (now, data["valid_time"][0], data["valid_time"][-1], m, m+n)
+
         # now close the file
         self._handle.close()
         self._handle = None
@@ -212,31 +225,41 @@ class Dataset:
         if self.closed or self._mode not in ("w", "a"):
             raise RuntimeError("dataset must be open to write data to it.")
 
-        data = (-1, NAT, valid_time, value)
+        data = (-1, valid_time, value)
         self._staged_data.append(data)
 
     def interpolate_values(self, interp_times):
         """Interpolates the values at the given valid times."""
-        valid_times = self._dataset["valid_time"]
         interp_times = np.asarray(interp_times).astype(TIME_DTYPE)
         min_time, max_time = np.min(interp_times), np.max(interp_times)
+        valid_times = self._search_valid_transactions(slice(min_time, max_time))["valid_time"]
+        sorted_idx = np.argsort(valid_times, kind="mergesort")
+        sorted_valid_times = valid_times[sorted_idx]
         min_idx, max_idx = (
             np.searchsorted(valid_times, min_time, side="right") - 1,
             np.searchsorted(valid_times, max_time, side="left") + 1,
         )
-        considered_records = self._dataset[min_idx:max_idx]
+        considered_records = self._dataset[sorted_idx][min_idx:max_idx]
 
         x = considered_records["valid_time"].view(np.int64)
         y = considered_records["value"]
 
         return np.interp(interp_times.view(np.int64), x, y)
 
-    @_wrap_deduplicate
-    def _index_by(self, field, k, multi=False):
-        sort_field = self._dataset[field]
-
-        if multi and not isinstance(k, slice):
+    def _search_valid_transactions(self, k):
+        if not isinstance(k, slice):
             k = slice(k, k, None)
+
+        ds = self._dataset
+        tidx = ds.attrs["transaction_index"]
+        idxs = np.nonzero(tidx["start_valid_time"] >= k.start) | (tidx["end_valid_time"] <= k.stop)
+        return self.transactions[np.min(idxs, initial=0):np.max(idxs, initial=0)+1]
+
+    @_wrap_deduplicate
+    def _index_valid_time(self, k):
+        ds = self._search_valid_transactions(k)
+        ds = ds[np.argsort(ds["valid_time"], kind="mergesort")]
+        sort_field = ds["valid_time"]
 
         if isinstance(k, slice):
             if k.step is not None:
@@ -248,20 +271,43 @@ class Dataset:
                 np.searchsorted(sort_field, k.start) if k.start is not None else None
             )
             end_idx = (
-                np.searchsorted(sort_field, k.stop, side="right")
+                np.searchsorted(sort_field, k.stop)
                 if k.stop is not None
                 else None
             )
 
-            return self._dataset[start_idx:end_idx]
+            return ds[start_idx:end_idx]
         else:
             possible_idx = np.searchsorted(sort_field, k)
             if sort_field[possible_idx] == k:
-                return self._dataset[possible_idx]
+                return ds[possible_idx]
             else:
                 raise ValueError(
                     "The specified date was not found in the dataset, use interpolate_value."
                 )
+
+    @_wrap_deduplicate
+    def _index_by(self, field, k, multi=False):
+        sort_field = self._dataset[field]
+
+        if multi and not isinstance(k, slice):
+            k = slice(k, k, None)
+
+        if k.step is not None:
+            raise ValueError(
+                "Stepping is not supported with indexing, use interpolate_values."
+            )
+
+        start_idx = (
+            np.searchsorted(sort_field, k.start) if k.start is not None else None
+        )
+        end_idx = (
+            np.searchsorted(sort_field, k.stop, side="right")
+            if k.stop is not None
+            else None
+        )
+
+        return self._dataset[start_idx:end_idx]
 
     def _construct_indexer(key, multi=False):
         def reader(self, k):
@@ -269,7 +315,7 @@ class Dataset:
 
         return _Indexer(reader)
 
-    valid_times = _construct_indexer("valid_time")
+    valid_times = _Indexer(_index_valid_time)
     valid_times.__doc__ = """Indexes into the dataset by valid time."""
     transaction_times = _construct_indexer("transaction_time", multi=True)
     transaction_times.__doc__ = """Indexes into the dataset by transaction time."""
