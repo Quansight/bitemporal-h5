@@ -120,7 +120,11 @@ class Dataset:
                 ]
             )
         else:
-            self._dtype = None
+            with self:
+                self._dtype = self._dtype_from_file()
+
+        if self._dtype is None:
+            raise ValueError("Must specify dtype on first transaction.")
 
     def _dtype_from_file(self):
         if self._dataset_name not in self._group:
@@ -130,20 +134,7 @@ class Dataset:
 
     @property
     def dtype(self):
-        # first, see if we have already computed a dtype
-        if self._dtype is not None:
-            return self._dtype
-        # next, try to get it from the HDF5 file
-        if self.closed:
-            with self:
-                dtype = self._dtype_from_file()
-        else:
-            dtype = self._dtype_from_file()
-        # next compute from data
-        if dtype is None:
-            raise RuntimeError("Must specify dtype on first transaction.")
-        self._dtype = dtype
-        return dtype
+        return self._dtype
 
     @dtype.setter
     def dtype(self, value):
