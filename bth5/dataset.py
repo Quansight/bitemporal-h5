@@ -7,7 +7,6 @@ import functools
 import h5py
 import numpy as np
 
-
 def _deduplicate(ids, dates):
     a = {}
     b = []
@@ -46,6 +45,15 @@ def _wrap_deduplicate(f):
 NAT = np.datetime64("nat")
 TIME_DTYPE = np.dtype("<M8[us]")
 h5py.register_dtype(TIME_DTYPE)
+TIDX_DTYPE = np.dtype(
+    [
+        ("transaction_time", TIME_DTYPE),
+        ("start_valid_time", TIME_DTYPE),
+        ("end_valid_time", TIME_DTYPE),
+        ("start_idx", "<u8"),
+        ("end_idx", "<u8")
+    ]
+)
 
 
 def _ensure_groups(handle, path):
@@ -98,7 +106,7 @@ class Dataset:
         filename : str
             The path to the h5 file, on disk.
         path : str
-            The path to the dataset within the HDF5 file.
+            The path to the group within the HDF5 file.
         """
         if not posixpath.isabs(path):
             raise ValueError(
@@ -152,40 +160,39 @@ class Dataset:
         self._handle = h5py.File(self.filename, mode)
         self.closed = False
         self._mode = mode
-        self._group_name, self._dataset_name = posixpath.split(self.path)
+        self._group_name = self.path
+        self._dataset_name = "dataset"
+        self._transaction_idx_name = "transaction_index"
         self._group = _ensure_groups(self._handle, self._group_name)
         if "w" in mode or "a" in mode:
             self._staged_data = []
 
     @property
     def _dataset(self):
-        if not self._dataset_name in self._group:
+        if self._dataset_name not in self._group:
             self._group.create_dataset(
                 self._dataset_name, dtype=self.dtype, maxshape=(None,), shape=(0,)
             )
 
         return self._group[self._dataset_name]
 
+    @property
+    def _transaction_index(self):
+        if self._transaction_idx_name not in self._group:
+            self._group.create_dataset(
+                self._transaction_idx_name, dtype=TIDX_DTYPE, maxshape=(None,), shape=(0,)
+            )
+
+        return self._group[self._transaction_idx_name]
+
     def close(self):
         """Close the current file handle."""
         ds = self._dataset
-        # Modify transaction ID index
-        if "transaction_index" not in ds.attrs:
-            tidx_dt = np.dtype(
-                [
-                    ("transaction_time", TIME_DTYPE),
-                    ("start_valid_time", TIME_DTYPE),
-                    ("end_valid_time", TIME_DTYPE),
-                    ("start_idx", "<u8"),
-                    ("end_idx", "<u8")
-                ]
-            )
-            ds.attrs["transaction_index"] = np.empty((0,), dtype=tidx_dt)
+        tidx = self._transaction_index
 
         # write the staged data
         if self._staged_data:
             n = len(self._staged_data)
-            tidx = ds.attrs["transaction_index"]
             data = np.empty(n, dtype=self.dtype)
             data[:] = self._staged_data
             # 1. Mergesort is stable
@@ -251,7 +258,7 @@ class Dataset:
             k = slice(k, k, None)
 
         ds = self._dataset
-        tidx = ds.attrs["transaction_index"]
+        tidx = self._transaction_index
         idxs = np.nonzero(tidx["start_valid_time"] >= k.start) | (tidx["end_valid_time"] <= k.stop)
         return self.transactions[np.min(idxs, initial=0):np.max(idxs, initial=0)+1]
 
