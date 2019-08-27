@@ -6,7 +6,9 @@ import functools
 
 import h5py
 import numpy as np
+import numba as nb
 
+@nb.njit
 def _deduplicate(ids, dates):
     a = {}
     b = []
@@ -25,7 +27,6 @@ def _deduplicate(ids, dates):
             j += 1
 
     ret = np.array(b, dtype=np.intp)
-    ret.sort(kind="mergesort")
     return ret
 
 
@@ -35,7 +36,9 @@ def _wrap_deduplicate(f):
         ret = f(*a, **kw)
 
         if ret.ndim > 0:
-            dedup_ids = _deduplicate(ret["transaction_id"], ret["valid_time"])
+            # A view is okay here since we only care about the hash.
+            dedup_ids = _deduplicate(ret["transaction_id"], ret["valid_time"].view(np.int64))
+            dedup_ids.sort(kind="mergesort")
             ret = ret[dedup_ids]
         return ret
 
