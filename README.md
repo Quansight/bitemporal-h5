@@ -55,7 +55,7 @@ The interface for writing to the bitemporal HDF5 storage is as follows:
 ```python
 import bth5
 
-with bth5.open("/path/to/file.h5", "/path/to/dataset", "a+") as ds:
+with bth5.open("/path/to/file.h5", "/path/to/group", "a+") as ds:
     # all writes are staged into a single transaction and then
     # written when the context exits. Transaction times and IDs
     # are automatically applied. The first write call determines
@@ -72,7 +72,7 @@ Reading from the data set should follow the normal numpy indexing:
 
 ```python
 # opened in read-only mode
->>> ds = bth5.open("/path/to/file.h5", "/path/to/dataset")
+>>> ds = bth5.open("/path/to/file.h5", "/path/to/group")
 >>> in_mem = ds[:]
 >>> in_mem.dtype
 np.dtype([
@@ -81,23 +81,13 @@ np.dtype([
 ])
 ```
 
-Note that when reading in this way, only the most recent transaction times
-for a given valid time is returned. Older data is filtered out. Additionally,
-users are able to filter based on transaction time and/or ID (and other columns)
-via the `filt` interface:
-
-```python
->>> ds = bth5.open("/path/to/file.h5", "/path/to/dataset")
->>> ds.filt['transaction_id<=4', 'transaction_time>=192']
-```
-
 This again should return the latest valid time and value which is present in the
 reduced dataset. Furthermore, there is an escape valve to reach the actual
 dataset as represented on-disk. This is the `raw` attribute, that returns
 a reference to the h5py dataset.
 
 ```python
->>> ds = bth5.open("/path/to/file.h5", "/path/to/dataset")
+>>> ds = bth5.open("/path/to/file.h5", "/path/to/group")
 >>> ds.raw
 ```
 

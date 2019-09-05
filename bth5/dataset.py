@@ -8,7 +8,8 @@ import h5py
 import numpy as np
 import numba as nb
 
-@nb.njit
+
+@nb.jit(nopython=True, nogil=True)
 def _deduplicate(ids, dates):
     a = {}
     b = []
@@ -37,7 +38,9 @@ def _wrap_deduplicate(f):
 
         if ret.ndim > 0:
             # A view is okay here since we only care about the hash.
-            dedup_ids = _deduplicate(ret["transaction_id"], ret["valid_time"].view(np.int64))
+            dedup_ids = _deduplicate(
+                ret["transaction_id"], ret["valid_time"].view(np.int64)
+            )
             dedup_ids.sort(kind="mergesort")
             ret = ret[dedup_ids]
         return ret
@@ -54,7 +57,7 @@ TIDX_DTYPE = np.dtype(
         ("start_valid_time", TIME_DTYPE),
         ("end_valid_time", TIME_DTYPE),
         ("start_idx", "<u8"),
-        ("end_idx", "<u8")
+        ("end_idx", "<u8"),
     ]
 )
 
@@ -183,7 +186,10 @@ class Dataset:
     def _transaction_index(self):
         if self._transaction_idx_name not in self._group:
             self._group.create_dataset(
-                self._transaction_idx_name, dtype=TIDX_DTYPE, maxshape=(None,), shape=(0,)
+                self._transaction_idx_name,
+                dtype=TIDX_DTYPE,
+                maxshape=(None,),
+                shape=(0,),
             )
 
         return self._group[self._transaction_idx_name]
@@ -210,7 +216,7 @@ class Dataset:
             ds[m:] = data[sorted_idx]
             tidx.resize((tid + 1,))
             now = np.datetime64(datetime.datetime.utcnow())
-            tidx[-1] = (now, data["valid_time"][0], data["valid_time"][-1], m, m+n)
+            tidx[-1] = (now, data["valid_time"][0], data["valid_time"][-1], m, m + n)
 
         # now close the file
         self._handle.close()
@@ -242,7 +248,9 @@ class Dataset:
         """Interpolates the values at the given valid times."""
         interp_times = np.asarray(interp_times).astype(TIME_DTYPE)
         min_time, max_time = np.min(interp_times), np.max(interp_times)
-        valid_times = self._search_valid_transactions(slice(min_time, max_time))["valid_time"]
+        valid_times = self._search_valid_transactions(slice(min_time, max_time))[
+            "valid_time"
+        ]
         sorted_idx = np.argsort(valid_times, kind="mergesort")
         sorted_valid_times = valid_times[sorted_idx]
         min_idx, max_idx = (
@@ -262,8 +270,10 @@ class Dataset:
 
         ds = self._dataset
         tidx = self._transaction_index
-        idxs = np.nonzero(tidx["start_valid_time"] >= k.start) | (tidx["end_valid_time"] <= k.stop)
-        return self.transactions[np.min(idxs, initial=0):np.max(idxs, initial=0)+1]
+        idxs = np.nonzero(tidx["start_valid_time"] >= k.start) | (
+            tidx["end_valid_time"] <= k.stop
+        )
+        return self.transactions[np.min(idxs, initial=0) : np.max(idxs, initial=0) + 1]
 
     @_wrap_deduplicate
     def _index_valid_time(self, k):
@@ -281,9 +291,7 @@ class Dataset:
                 np.searchsorted(sort_field, k.start) if k.start is not None else None
             )
             end_idx = (
-                np.searchsorted(sort_field, k.stop)
-                if k.stop is not None
-                else None
+                np.searchsorted(sort_field, k.stop) if k.stop is not None else None
             )
 
             return ds[start_idx:end_idx]
