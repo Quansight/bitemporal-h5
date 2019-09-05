@@ -16,8 +16,8 @@ def main():
         description="Bitemporal HDF5",
         long_description=readme,
         description_content_type="text/markdown",
-        license="BSD",
-        version="0.0.0",
+        license="BSD-3-Clause",
+        version="0.0.1",
         author="Anthony Scopatz",
         maintainer="Quansight",
         author_email="scopatz@gmail.com",
@@ -27,6 +27,12 @@ def main():
         packages=["bth5"],
         package_dir={"bth5": "bth5"},
         zip_safe=True,
+        install_requires=[
+            "h5py @ git+https://github.com/Quansight/h5py@datetime64#egg=hdf5",
+            "numpy>=1.16",
+            "numba>=0.45",
+        ],
+        extras_require={"tests": ["pytest>=3.5", "pytest-black", "pytest-cov"]},
     )
     setup(**skw)
 

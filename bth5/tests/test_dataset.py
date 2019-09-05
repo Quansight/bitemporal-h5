@@ -5,9 +5,7 @@ import pytest
 
 
 def test_write(tmp_path):
-    with bth5.open(
-        tmp_path / "example.h5", "/", "w", value_dtype=np.float64
-    ) as ds:
+    with bth5.open(tmp_path / "example.h5", "/", "w", value_dtype=np.float64) as ds:
         ds.write(np.datetime64("2018-06-21 12:26:47"), 2.0)
         ds.write(np.datetime64("2018-06-21 12:26:48"), 1.0)
 
@@ -37,9 +35,7 @@ def test_write(tmp_path):
 
 
 def test_invalid_order(tmp_path):
-    with bth5.open(
-        tmp_path / "example.h5", "/", "w", value_dtype=np.float64
-    ) as ds:
+    with bth5.open(tmp_path / "example.h5", "/", "w", value_dtype=np.float64) as ds:
         ds.write(np.datetime64("2018-06-21 12:26:48"), 2.0)
         ds.write(np.datetime64("2018-06-21 12:26:47"), 1.0)
 
@@ -53,9 +49,7 @@ def test_invalid_order(tmp_path):
 
 
 def test_interpolate(tmp_path):
-    with bth5.open(
-        tmp_path / "example.h5", "/", "w", value_dtype=np.float64
-    ) as ds:
+    with bth5.open(tmp_path / "example.h5", "/", "w", value_dtype=np.float64) as ds:
         ds.write(np.datetime64("2018-06-21 12:26:47"), 2.0)
         ds.write(np.datetime64("2018-06-21 12:26:49"), 1.0)
 
@@ -64,9 +58,7 @@ def test_interpolate(tmp_path):
 
 
 def test_deduplication(tmp_path):
-    with bth5.open(
-        tmp_path / "example.h5", "/", "w", value_dtype=np.float64
-    ) as ds:
+    with bth5.open(tmp_path / "example.h5", "/", "w", value_dtype=np.float64) as ds:
         ds.write(np.datetime64("2018-06-21 12:26:47"), 2.0)
         ds.write(np.datetime64("2018-06-21 12:26:49"), 1.0)
 
