@@ -5,6 +5,7 @@ steps:
       architecture: "x64"
 
   - script: |
+      /usr/bin/sudo apt-get update && /usr/bin/sudo apt-get install libhdf5-10* libhdf5-dev
       pip install -e .[tests]
       pip install codecov
     displayName: Install package
