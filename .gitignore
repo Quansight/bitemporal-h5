@@ -128,3 +128,6 @@ dmypy.json
 
 # Coverage
 junit/
+
+# Rever
+rever/
