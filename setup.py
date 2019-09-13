@@ -28,7 +28,7 @@ def main():
         package_dir={"bth5": "bth5"},
         zip_safe=True,
         install_requires=[
-            "h5py @ git+https://github.com/Quansight/h5py@datetime64#egg=hdf5",
+            "h5py >= 2.10",
             "numpy>=1.16",
             "numba>=0.45",
         ],
