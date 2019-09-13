@@ -17,7 +17,7 @@ def main():
         long_description=readme,
         description_content_type="text/markdown",
         license="BSD-3-Clause",
-        version="0.0.0",
+        version="0.0.1",
         author="Anthony Scopatz",
         maintainer="Quansight",
         author_email="scopatz@gmail.com",
