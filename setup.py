@@ -27,11 +27,7 @@ def main():
         packages=["bth5"],
         package_dir={"bth5": "bth5"},
         zip_safe=True,
-        install_requires=[
-            "h5py >= 2.10",
-            "numpy>=1.16",
-            "numba>=0.45",
-        ],
+        install_requires=["h5py >= 2.8", "numpy>=1.16", "numba>=0.45"],
         extras_require={"tests": ["pytest>=3.5", "pytest-black", "pytest-cov"]},
     )
     setup(**skw)

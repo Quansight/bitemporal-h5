@@ -377,16 +377,9 @@ class Dataset:
         """Interpolates the values at the given valid times."""
         interp_times = np.asarray(interp_times).astype(TIME_DTYPE)
         min_time, max_time = np.min(interp_times), np.max(interp_times)
-        valid_times = self._search_valid_transactions(slice(min_time, max_time))[
-            "valid_time"
-        ]
-        sorted_idx = np.argsort(valid_times, kind="mergesort")
-        sorted_valid_times = valid_times[sorted_idx]
-        min_idx, max_idx = (
-            np.searchsorted(valid_times, min_time, side="right") - 1,
-            np.searchsorted(valid_times, max_time, side="left") + 1,
-        )
-        considered_records = self._dataset[sorted_idx][min_idx:max_idx]
+        considered_records = self._extend_valid_times[min_time:max_time]
+        sorted_idx = np.argsort(considered_records, kind="mergesort")
+        considered_records = considered_records[sorted_idx]
 
         x = considered_records["valid_time"].view(np.int64)
         y = considered_records["value"]
@@ -405,7 +398,7 @@ class Dataset:
         return self.transactions[np.min(idxs, initial=0) : np.max(idxs, initial=0) + 1]
 
     @_wrap_deduplicate
-    def _index_valid_time(self, k):
+    def _index_valid_time(self, k, extend=False):
         ds = self._search_valid_transactions(k)
         ds = ds[np.argsort(ds["valid_time"], kind="mergesort")]
         sort_field = ds["valid_time"]
@@ -416,12 +409,32 @@ class Dataset:
                     "Stepping is not supported with indexing, use interpolate_values."
                 )
 
-            start_idx = (
-                np.searchsorted(sort_field, k.start) if k.start is not None else None
-            )
-            end_idx = (
-                np.searchsorted(sort_field, k.stop) if k.stop is not None else None
-            )
+            if not extend:
+                start_idx, end_idx = (
+                    (
+                        np.searchsorted(sort_field, k.start)
+                        if k.start is not None
+                        else None
+                    ),
+                    (
+                        np.searchsorted(sort_field, k.stop)
+                        if k.stop is not None
+                        else None
+                    ),
+                )
+            else:
+                start_idx, end_idx = (
+                    (
+                        np.searchsorted(sort_field, k.start, side="right") - 1
+                        if k.start is not None
+                        else None
+                    ),
+                    (
+                        np.searchsorted(sort_field, k.stop, side="left") + 1
+                        if k.stop is not None
+                        else None
+                    ),
+                )
 
             return ds[start_idx:end_idx]
         else:
@@ -462,8 +475,12 @@ class Dataset:
 
         return _Indexer(reader)
 
+    def _index_extended_valid_time(self, k):
+        return self._index_valid_time(k, extend=True)
+
     valid_times = _Indexer(_index_valid_time)
     valid_times.__doc__ = """Indexes into the dataset by valid time."""
+    _extend_valid_times = _Indexer(_index_extended_valid_time)
     transaction_times = _construct_indexer("transaction_time", multi=True)
     transaction_times.__doc__ = """Indexes into the dataset by transaction time."""
     transactions = _construct_indexer("transaction_id", multi=True)
