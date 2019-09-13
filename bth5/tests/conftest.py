@@ -7,7 +7,7 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def temp_h5(tmpdir):
-    fname = os.path.join(tmpdir, "temp.h5")
+    fname = tmpdir / "temp.h5"
     return fname
 
 
