@@ -11,6 +11,8 @@ import json
 
 
 class DatasetView(h5py.Dataset):
+    """ Views a ``h5py.Dataset`` as a dtype of your choice. """
+
     def __init__(self, id, dtype=None):
         super().__init__(id)
         file_dtype = (
