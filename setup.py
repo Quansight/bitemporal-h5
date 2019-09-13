@@ -15,7 +15,7 @@ def main():
         name="bth5",
         description="Bitemporal HDF5",
         long_description=readme,
-        description_content_type="text/markdown",
+        long_description_content_type="text/markdown",
         license="BSD-3-Clause",
         version="0.0.1",
         author="Anthony Scopatz",
