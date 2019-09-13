@@ -3,6 +3,7 @@ $GITHUB_ORG = "Quansight"
 $ACTIVITIES = ['authors', 'version_bump', 'changelog',
                'tag', 'push_tag', 'ghrelease', 'pypi',
               ]
+$PYPI_SIGN = False
 
 #
 # Version bumping
