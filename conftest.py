@@ -12,7 +12,10 @@ def temp_h5(tmpdir):
 
 
 @pytest.fixture(autouse=True)
-def add_doctest_namespaces(doctest_namespace, temp_h5):
+def add_doctest_vars(doctest_namespace, temp_h5):
+    import bth5
+
     doctest_namespace["np"] = numpy
     doctest_namespace["h5py"] = h5py
+    doctest_namespace["bth5"] = bth5
     doctest_namespace["temp_h5"] = temp_h5

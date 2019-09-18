@@ -11,7 +11,19 @@ import json
 
 
 class DatasetView(h5py.Dataset):
-    """ Views a ``h5py.Dataset`` as a dtype of your choice. """
+    r"""
+    Views a ``h5py.Dataset`` as a dtype of your choice.
+
+    Examples
+    --------
+    >>> with h5py.File(temp_h5, 'w') as f:
+    ...     orig_dset = f['/'].create_dataset('example', shape=(), dtype=np.dtype('V8'))
+    ...     id = orig_dset.id
+    ...     dset = DatasetView(id, dtype='<M8[D]')
+    ...     dset[...] = np.datetime64("2019-09-18")
+    ...     orig_dset[...]
+    array(b'\xED\x46\x00\x00\x00\x00\x00\x00', dtype='|V8')
+    """
 
     def __init__(self, id, dtype=None):
         super().__init__(id)
@@ -109,6 +121,10 @@ def _argunique_last(keys):
 
 
 def _wrap_deduplicate(f):
+    """
+    Wraps a functions so it de-duplicates the data with respect to the valid times.
+    """
+
     @functools.wraps(f)
     def wrapped(*a, **kw):
         ret = f(*a, **kw)
@@ -146,6 +162,14 @@ def _ensure_groups(handle, path):
         The file handle in which to ensure the group.
     path : str
         The group to ensure inside the file.
+    
+    Examples
+    --------
+    >>> with h5py.File(temp_h5, 'w') as f:
+    ...     _ensure_groups(f, '/potato')
+    ...     '/potato' in f
+    <HDF5 group "/potato" (0 members)>
+    True
     """
     # this assumes the path is an abspath
     group = handle["/"]  # the file handle is the root group.
@@ -162,6 +186,26 @@ def _ensure_groups(handle, path):
 
 
 def _transform_dt(dt):
+    """
+    Replaces all datetime64s inside a dtype with ``|V8``, an opaque
+    8-byte bitfield.
+
+    Parameters
+    ----------
+    dt: np.dtype
+        The dtype to transform
+    
+    Examples
+    --------
+    >>> _transform_dt(np.dtype('int8'))
+    dtype('int8')
+    >>> _transform_dt(np.dtype('<M8'))
+    dtype('V8')
+    >>> _transform_dt(np.dtype(('<M8', (5, 5))))
+    dtype(('V8', (5, 5)))
+    >>> _transform_dt(np.dtype([('a', '<M8'), ('b', 'int8')]))
+    dtype([('a', 'V8'), ('b', 'i1')])
+    """
     if dt.fields is not None:
         dt_out = {"names": [], "formats": [], "offsets": []}
         for field, dt_inner in dt.fields.items():
@@ -196,12 +240,29 @@ def _check_index_dtype(k):
     dtype('int64')
     """
     if not isinstance(k, slice):
+        if hasattr(k, "__len__") and len(k) == 0:
+            return np.intp
         return np.asarray(k).dtype
     arr = [v for v in (k.start, k.stop, k.step) if v is not None]
+
     return _check_index_dtype(arr)
 
 
 class _Indexer:
+    """
+    Turns a function or method into an indexer.
+
+    Examples
+    --------
+    >>> def f(k):
+    ...     return k
+    >>> i = _Indexer(f)
+    >>> i[1]
+    1
+    >>> i[5:8]
+    slice(5, 8, None)
+    """
+
     def __init__(self, reader):
         self._reader = reader
 
@@ -217,11 +278,23 @@ class _Indexer:
 
 
 class Dataset:
-    """Represents a bitemporal dataset as a memory-mapped structure
+    """
+    Represents a bitemporal dataset as a memory-mapped structure
     stored in HDF5.
+
+    Examples
+    --------
+    >>> ds = bth5.Dataset(temp_h5, '/path/to/group', mode='a', value_dtype=np.float64)
+    >>> with ds:
+    ...     ds.write(np.datetime64("2018-06-21 12:26:47"), 2.0)
+    >>> # Write happens here.
+    >>> with ds:
+    ...     ds.valid_times[:]
+    array([(0, '2018-06-21T12:26:47.000000', 2.)],
+          dtype=[('transaction_id', '<u8'), ('valid_time', '<M8[us]'), ('value', '<f8')])
     """
 
-    def __init__(self, filename, path, value_dtype=None):
+    def __init__(self, filename, path, mode="r", value_dtype=None):
         """
         Parameters
         ----------
@@ -240,7 +313,8 @@ class Dataset:
         self.filename = filename
         self.path = path
         self.closed = True
-        self._mode = self._handle = None
+        self._mode = mode
+        self._handle = None
         self._staged_data = None
         if value_dtype is not None:
             self._dtype = np.dtype(
@@ -309,7 +383,6 @@ class Dataset:
             )
 
         id = self._group[self._dataset_name].id
-
         return DatasetView(id, dtype=self.dtype)
 
     @property
@@ -394,9 +467,13 @@ class Dataset:
 
         ds = self._dataset
         tidx = self._transaction_index
-        idxs = np.nonzero(tidx["start_valid_time"] >= k.start) | (
-            tidx["end_valid_time"] <= k.stop
-        )
+        mask = np.ones(tidx.shape, dtype=np.bool_)
+        if k.start is not None:
+            mask |= tidx["start_valid_time"] >= k.start
+
+        if k.stop is not None:
+            mask |= tidx["end_valid_time"] <= k.stop
+        idxs = np.nonzero(mask)
         return self.transactions[np.min(idxs, initial=0) : np.max(idxs, initial=0) + 1]
 
     @_wrap_deduplicate
