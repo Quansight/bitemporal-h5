@@ -265,6 +265,8 @@ class _Indexer:
 
     def __init__(self, reader):
         self._reader = reader
+        if hasattr(reader, "__doc__"):
+            self.__doc__ = reader.__doc__
 
     def __get__(self, obj, otype=None):
         if obj is not None:
@@ -339,10 +341,16 @@ class Dataset:
 
     @property
     def dtype(self):
+        """
+        The dtype of this dataset.
+        """
         return self._dtype
 
     @property
     def file_dtype(self):
+        """
+        The dtype stored in the file.
+        """
         if self._file_dtype is None:
             self._file_dtype = _transform_dt(self.dtype)
 
@@ -350,7 +358,6 @@ class Dataset:
 
     @dtype.setter
     def dtype(self, value):
-        # TODO: add verification that this has the proper format
         self._dtype = value
 
     def open(self, mode="r", **kwargs):
@@ -478,6 +485,9 @@ class Dataset:
 
     @_wrap_deduplicate
     def _index_valid_time(self, k, extend=False):
+        """
+        Index into the dataset by valid time.
+        """
         ds = self._search_valid_transactions(k)
         ds = ds[np.argsort(ds["valid_time"], kind="mergesort")]
         sort_field = ds["valid_time"]
@@ -566,6 +576,7 @@ class Dataset:
     transactions.__doc__ = """Indexes into the dataset by transaction ID."""
 
     def _record_idx(self, k):
+        """Index into the dataset by record ID."""
         return self._dataset[k]
 
     record_idx = _Indexer(_record_idx)
