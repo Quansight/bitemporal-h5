@@ -73,3 +73,8 @@ target/
 
 # Sandbox
 sandbox.py
+# Coverage
+junit/
+
+# Rever
+rever/
