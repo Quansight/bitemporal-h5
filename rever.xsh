@@ -11,6 +11,7 @@ $PYPI_SIGN = False
 $VERSION_BUMP_PATTERNS = [
     ('setup.py', r'version\s*=.*,', 'version="$VERSION",'),
     ('bth5/__init__.py', r'__version__\s*=.*', '__version__ = "$VERSION"'),
+    ('docs/conf.py', r'__version__\s*=.*', '__version__ = "$VERSION"'),
 ]
 
 #

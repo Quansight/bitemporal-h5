@@ -11,10 +11,10 @@ def test_write(tmp_path):
 
     with bth5.open(tmp_path / "example.h5", "/", "r") as ds:
         assert_recordvalidequal(
-            ds.record_idx[0], np.datetime64("2018-06-21 12:26:47"), 2.0
+            ds.records[0], np.datetime64("2018-06-21 12:26:47"), 2.0
         )
         assert_recordvalidequal(
-            ds.record_idx[1], np.datetime64("2018-06-21 12:26:48"), 1.0
+            ds.records[1], np.datetime64("2018-06-21 12:26:48"), 1.0
         )
         assert_recordvalidequal(
             ds.valid_times[np.datetime64("2018-06-21 12:26:47")],
@@ -41,10 +41,10 @@ def test_invalid_order(tmp_path):
 
     with bth5.open(tmp_path / "example.h5", "/", "r") as ds:
         assert_recordvalidequal(
-            ds.record_idx[0], np.datetime64("2018-06-21 12:26:47"), 1.0
+            ds.records[0], np.datetime64("2018-06-21 12:26:47"), 1.0
         )
         assert_recordvalidequal(
-            ds.record_idx[1], np.datetime64("2018-06-21 12:26:48"), 2.0
+            ds.records[1], np.datetime64("2018-06-21 12:26:48"), 2.0
         )
 
 

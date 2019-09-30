@@ -3,7 +3,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.abspath(".."))
-from bth5 import __version__
+__version__ = "0.0.1"
 
 extensions = [
     "sphinx.ext.autodoc",
@@ -126,14 +126,22 @@ latex_elements = {
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-    (master_doc, "bth5.tex", "Bi-temporal HDF5 Documentation", "Bi-temporal HDF5 Developers", "manual")
+    (
+        master_doc,
+        "bth5.tex",
+        "Bi-temporal HDF5 Documentation",
+        "Bi-temporal HDF5 Developers",
+        "manual",
+    )
 ]
 
 # -- Options for manual page output ---------------------------------------
 
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
-man_pages = [(master_doc, "Bi-temporal HDF5", "Bi-temporal HDF5 Documentation", [author], 1)]
+man_pages = [
+    (master_doc, "Bi-temporal HDF5", "Bi-temporal HDF5 Documentation", [author], 1)
+]
 
 # -- Options for Texinfo output -------------------------------------------
 

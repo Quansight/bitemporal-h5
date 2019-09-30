@@ -1,5 +1,5 @@
-bth5.open
-=========
+open
+====
 
 .. currentmodule:: bth5
 
