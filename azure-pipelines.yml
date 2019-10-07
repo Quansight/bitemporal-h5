@@ -8,15 +8,22 @@ jobs:
     - template: ci/azure-steps.yml
   strategy:
     matrix:
-        Python37:
-          python_version: '3.7'
-        Python36:
-          python_version: '3.6'
-        Python35:
-          python_version: '3.5'
-        Python35_H5Py28:
-          python_version: '3.5'
-          H5PY_VERSION: '2.8'
-        Python35_H5Py29:
-          python_version: '3.5'
-          H5PY_VERSION: '2.9'
+      Python37:
+        python_version: '3.7'
+      Python36:
+        python_version: '3.6'
+      Python35:
+        python_version: '3.5'
+      Python35_H5Py28:
+        python_version: '3.5'
+        H5PY_VERSION: '2.8'
+      Python35_H5Py29:
+        python_version: '3.5'
+        H5PY_VERSION: '2.9'
+- job: Docs
+  variables:
+    python_version: '3.7'
+  pool:
+    vmImage: 'ubuntu-16.04'
+  steps:
+    - template: ci/azure-docs.yml

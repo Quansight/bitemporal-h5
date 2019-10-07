@@ -1,18 +1,8 @@
-import os
-import tempfile
-import numpy
 import h5py
-import pytest
+import platform
 
 
-@pytest.fixture(autouse=True)
-def temp_h5(tmpdir):
-    fname = tmpdir / "temp.h5"
-    return fname
-
-
-@pytest.fixture(autouse=True)
-def add_doctest_namespaces(doctest_namespace, temp_h5):
-    doctest_namespace["np"] = numpy
-    doctest_namespace["h5py"] = h5py
-    doctest_namespace["temp_h5"] = temp_h5
+def pytest_cmdline_preparse(args):
+    version_tuple = h5py.version.version_tuple
+    if version_tuple[:2] >= (2, 9) and platform.system == "Linux":
+        args.append("--doctest-modules")

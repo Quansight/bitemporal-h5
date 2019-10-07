@@ -1,0 +1,21 @@
+steps:
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: $(python_version)
+      architecture: "x64"
+
+  - script: |
+      /usr/bin/sudo apt-get update && /usr/bin/sudo apt-get install libhdf5-10* libhdf5-dev
+      if [[ -z "${H5PY_VERSION}" ]]; then
+        pip install h5py==${H5PY_VERSION}
+      fi
+      pip install -e .[docs]
+    displayName: Install package
+
+  - script: sphinx-build -W -b html docs/ _build/html
+    displayName: Build docs
+
+  - task: PublishPipelineArtifact@0
+    inputs:
+      artifactName: 'Documentation'
+      targetPath: '$(System.DefaultWorkingDirectory)/_build/html'

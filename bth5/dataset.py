@@ -1,7 +1,7 @@
 """The main bitemporal data set interface"""
 import datetime
 import posixpath
-import numbers
+from collections.abc import Iterable
 import functools
 
 import h5py
@@ -11,7 +11,19 @@ import json
 
 
 class DatasetView(h5py.Dataset):
-    """ Views a ``h5py.Dataset`` as a dtype of your choice. """
+    r"""
+    Views a ``h5py.Dataset`` as a dtype of your choice.
+
+    Examples
+    --------
+    >>> with h5py.File(temp_h5, 'w') as f:
+    ...     orig_dset = f['/'].create_dataset('example', shape=(), dtype=np.dtype('V8'))
+    ...     id = orig_dset.id
+    ...     dset = DatasetView(id, dtype='<M8[D]')
+    ...     dset[...] = np.datetime64("2019-09-18")
+    ...     orig_dset[...]
+    array(b'\xED\x46\x00\x00\x00\x00\x00\x00', dtype='|V8')
+    """
 
     def __init__(self, id, dtype=None):
         super().__init__(id)
@@ -109,6 +121,10 @@ def _argunique_last(keys):
 
 
 def _wrap_deduplicate(f):
+    """
+    Wraps a functions so it de-duplicates the data with respect to the valid times.
+    """
+
     @functools.wraps(f)
     def wrapped(*a, **kw):
         ret = f(*a, **kw)
@@ -146,6 +162,14 @@ def _ensure_groups(handle, path):
         The file handle in which to ensure the group.
     path : str
         The group to ensure inside the file.
+    
+    Examples
+    --------
+    >>> with h5py.File(temp_h5, 'w') as f:
+    ...     _ensure_groups(f, '/potato')
+    ...     '/potato' in f
+    <HDF5 group "/potato" (0 members)>
+    True
     """
     # this assumes the path is an abspath
     group = handle["/"]  # the file handle is the root group.
@@ -162,6 +186,26 @@ def _ensure_groups(handle, path):
 
 
 def _transform_dt(dt):
+    """
+    Replaces all datetime64s inside a dtype with ``|V8``, an opaque
+    8-byte bitfield.
+
+    Parameters
+    ----------
+    dt: np.dtype
+        The dtype to transform
+    
+    Examples
+    --------
+    >>> _transform_dt(np.dtype('int8'))
+    dtype('int8')
+    >>> _transform_dt(np.dtype('<M8'))
+    dtype('V8')
+    >>> _transform_dt(np.dtype(('<M8', (5, 5))))
+    dtype(('V8', (5, 5)))
+    >>> _transform_dt(np.dtype([('a', '<M8'), ('b', 'int8')]))
+    dtype([('a', 'V8'), ('b', 'i1')])
+    """
     if dt.fields is not None:
         dt_out = {"names": [], "formats": [], "offsets": []}
         for field, dt_inner in dt.fields.items():
@@ -196,14 +240,33 @@ def _check_index_dtype(k):
     dtype('int64')
     """
     if not isinstance(k, slice):
+        if hasattr(k, "__len__") and len(k) == 0:
+            return np.intp
         return np.asarray(k).dtype
     arr = [v for v in (k.start, k.stop, k.step) if v is not None]
+
     return _check_index_dtype(arr)
 
 
 class _Indexer:
+    """
+    Turns a function or method into an indexer.
+
+    Examples
+    --------
+    >>> def f(k):
+    ...     return k
+    >>> i = _Indexer(f)
+    >>> i[1]
+    1
+    >>> i[5:8]
+    slice(5, 8, None)
+    """
+
     def __init__(self, reader):
         self._reader = reader
+        if hasattr(reader, "__doc__"):
+            self.__doc__ = reader.__doc__
 
     def __get__(self, obj, otype=None):
         if obj is not None:
@@ -217,18 +280,34 @@ class _Indexer:
 
 
 class Dataset:
-    """Represents a bitemporal dataset as a memory-mapped structure
+    """
+    Represents a bitemporal dataset as a memory-mapped structure
     stored in HDF5.
+
+    Examples
+    --------
+    >>> ds = bth5.Dataset(temp_h5, '/path/to/group', mode='a', value_dtype=np.float64)
+    >>> with ds:
+    ...     ds.write(np.datetime64("2018-06-21 12:26:47"), 2.0)
+    >>> # Write happens here.
+    >>> with ds:
+    ...     ds.valid_times[:]
+    array([(0, '2018-06-21T12:26:47.000000', 2.)],
+          dtype=[('transaction_id', '<u8'), ('valid_time', '<M8[us]'), ('value', '<f8')])
     """
 
-    def __init__(self, filename, path, value_dtype=None):
+    def __init__(self, filename, path, mode="r", value_dtype=None):
         """
+        Creates a :obj:`Dataset`.
+
         Parameters
         ----------
         filename : str
             The path to the h5 file, on disk.
         path : str
             The path to the group within the HDF5 file.
+        mode : str
+            The mode to open a file with.
         value_dtype: str, optional
             The dtype of the value that is attached to
         """
@@ -240,7 +319,8 @@ class Dataset:
         self.filename = filename
         self.path = path
         self.closed = True
-        self._mode = self._handle = None
+        self._mode = mode
+        self._handle = None
         self._staged_data = None
         if value_dtype is not None:
             self._dtype = np.dtype(
@@ -265,10 +345,16 @@ class Dataset:
 
     @property
     def dtype(self):
+        """
+        The dtype of this dataset.
+        """
         return self._dtype
 
     @property
     def file_dtype(self):
+        """
+        The dtype stored in the file.
+        """
         if self._file_dtype is None:
             self._file_dtype = _transform_dt(self.dtype)
 
@@ -276,7 +362,6 @@ class Dataset:
 
     @dtype.setter
     def dtype(self, value):
-        # TODO: add verification that this has the proper format
         self._dtype = value
 
     def open(self, mode="r", **kwargs):
@@ -309,7 +394,6 @@ class Dataset:
             )
 
         id = self._group[self._dataset_name].id
-
         return DatasetView(id, dtype=self.dtype)
 
     @property
@@ -368,10 +452,33 @@ class Dataset:
         self.close()
 
     def write(self, valid_time, value):
-        """Appends data to a dataset."""
+        """
+        Appends data to a dataset.
+
+        Examples
+        --------
+        >>> with bth5.open(temp_h5, '/', mode='w', value_dtype=np.int64) as ds:
+        ...     ds.write(np.datetime64("2018-06-21 12:26:47"), 1.0)
+        ...     ds.write(np.datetime64("2018-06-21 12:26:49"), 2.0)
+        ...     ds.write([
+        ...         np.datetime64("2018-06-21 12:26:51"),
+        ...         np.datetime64("2018-06-21 12:26:53"),
+        ...     ], [3.0, 4.0])
+        >>> with bth5.open(temp_h5, '/', mode='r', value_dtype=np.int64) as ds:
+        ...     ds.records[:]
+        array([(0, '2018-06-21T12:26:47.000000', 1),
+               (0, '2018-06-21T12:26:49.000000', 2),
+               (0, '2018-06-21T12:26:51.000000', 3),
+               (0, '2018-06-21T12:26:53.000000', 4)],
+              dtype=[('transaction_id', '<u8'), ('valid_time', '<M8[us]'), ('value', '<i8')])
+        """
         if self.closed or self._mode not in ("w", "a"):
             raise RuntimeError("dataset must be open to write data to it.")
+        if isinstance(valid_time, Iterable):
+            for v, d in zip(valid_time, value):
+                self.write(v, d)
 
+            return
         data = (-1, valid_time, value)
         self._staged_data.append(data)
 
@@ -394,13 +501,49 @@ class Dataset:
 
         ds = self._dataset
         tidx = self._transaction_index
-        idxs = np.nonzero(tidx["start_valid_time"] >= k.start) | (
-            tidx["end_valid_time"] <= k.stop
-        )
-        return self.transactions[np.min(idxs, initial=0) : np.max(idxs, initial=0) + 1]
+        mask = np.ones(tidx.shape, dtype=np.bool_)
+        if k.start is not None:
+            mask |= tidx["start_valid_time"] >= k.start
+
+        if k.stop is not None:
+            mask |= tidx["end_valid_time"] <= k.stop
+        idxs = np.nonzero(mask)
+        return self.transaction_idx[
+            np.min(idxs, initial=0) : np.max(idxs, initial=0) + 1
+        ]
 
     @_wrap_deduplicate
     def _index_valid_time(self, k, extend=False):
+        """
+        Indexes into the dataset by valid time.
+
+        Examples
+        --------
+        >>> with bth5.open(temp_h5, '/', mode='w', value_dtype=np.int64) as ds:
+        ...     ds.write(np.datetime64("2018-06-21 12:26:47"), 2.0)
+        ...     ds.write(np.datetime64("2018-06-21 12:26:49"), 2.0)
+        >>> with bth5.open(temp_h5, '/', mode='r', value_dtype=np.int64) as ds:
+        ...     ds.valid_times[:]
+        ...     ds.valid_times[np.datetime64("2018-06-21 12:26:47"):np.datetime64("2018-06-21 12:26:48")]
+        ...     ds.valid_times[np.datetime64("2018-06-21 12:26:48"):]
+        ...     ds.valid_times[:np.datetime64("2018-06-21 12:26:48")]
+        ...     ds.valid_times[np.datetime64("2018-06-21 12:26:49")]
+        array([(0, '2018-06-21T12:26:47.000000', 2),
+               (0, '2018-06-21T12:26:49.000000', 2)],
+              dtype=[('transaction_id', '<u8'), ('valid_time', '<M8[us]'), ('value', '<i8')])
+        array([(0, '2018-06-21T12:26:47.000000', 2)],
+              dtype=[('transaction_id', '<u8'), ('valid_time', '<M8[us]'), ('value', '<i8')])
+        array([(0, '2018-06-21T12:26:49.000000', 2)],
+              dtype=[('transaction_id', '<u8'), ('valid_time', '<M8[us]'), ('value', '<i8')])
+        array([(0, '2018-06-21T12:26:47.000000', 2)],
+              dtype=[('transaction_id', '<u8'), ('valid_time', '<M8[us]'), ('value', '<i8')])
+        (0, '2018-06-21T12:26:49.000000', 2)
+        >>> with bth5.open(temp_h5, '/', mode='r', value_dtype=np.int64) as ds:
+        ...     ds.valid_times[np.datetime64("2018-06-21 12:26:48")]
+        Traceback (most recent call last):
+            ...
+        ValueError: The specified date was not found in the dataset, use interpolate_value.
+        """
         ds = self._search_valid_transactions(k)
         ds = ds[np.argsort(ds["valid_time"], kind="mergesort")]
         sort_field = ds["valid_time"]
@@ -480,18 +623,84 @@ class Dataset:
     def _index_extended_valid_time(self, k):
         return self._index_valid_time(k, extend=True)
 
-    valid_times = _Indexer(_index_valid_time)
-    valid_times.__doc__ = """Indexes into the dataset by valid time."""
-    _extend_valid_times = _Indexer(_index_extended_valid_time)
-    transaction_times = _construct_indexer("transaction_time", multi=True)
-    transaction_times.__doc__ = """Indexes into the dataset by transaction time."""
-    transactions = _construct_indexer("transaction_id", multi=True)
-    transactions.__doc__ = """Indexes into the dataset by transaction ID."""
+    def _transaction_times(self, k):
+        """
+        Index into the transaction index by transaction time.
 
-    def _record_idx(self, k):
+        Examples
+        --------
+        >>> with bth5.open(temp_h5, '/', mode='w', value_dtype=np.int64) as ds:
+        ...     ds.write(np.datetime64("2018-06-21 12:26:47"), 2.0)
+        ...     ds.write(np.datetime64("2018-06-21 12:26:49"), 2.0)
+        >>> with bth5.open(temp_h5, '/', mode='r', value_dtype=np.int64) as ds:
+        ...     ds.transaction_times[:]  # doctest: +SKIP
+        array([('2019-09-19T10:32:00.210817', '2018-06-21T12:26:47.000000', '2018-06-21T12:26:49.000000', 0, 2)],
+              dtype=[('transaction_time', '<M8[us]'), ('start_valid_time', '<M8[us]'), ('end_valid_time', '<M8[us]'), ('start_idx', '<u8'), ('end_idx', '<u8')])
+        """
+        tidx = self._transaction_index
+        sort_field = tidx["transaction_time"]
+
+        if isinstance(k, slice):
+            if k.step is not None:
+                raise ValueError(
+                    "Stepping is not supported with indexing, use interpolate_values."
+                )
+
+            start_idx, end_idx = (
+                (np.searchsorted(sort_field, k.start) if k.start is not None else None),
+                (np.searchsorted(sort_field, k.stop) if k.stop is not None else None),
+            )
+
+            return tidx[start_idx:end_idx]
+        else:
+            possible_idx = np.searchsorted(sort_field, k)
+            if sort_field[possible_idx] == k:
+                return tidx[possible_idx]
+            else:
+                raise ValueError(
+                    "The specified date was not found in the dataset, use interpolate_value."
+                )
+
+    valid_times = _Indexer(_index_valid_time)
+    _extend_valid_times = _Indexer(_index_extended_valid_time)
+    transaction_times = _Indexer(_transaction_times)
+    transaction_idx = _construct_indexer("transaction_id", multi=True)
+    transaction_idx.__doc__ = """Indexes into the dataset by transaction ID."""
+
+    def _records(self, k):
+        """
+        Index into the dataset by record ID.
+
+        Examples
+        --------
+        >>> with bth5.open(temp_h5, '/', mode='w', value_dtype=np.int64) as ds:
+        ...     ds.write(np.datetime64("2018-06-21 12:26:47"), 2.0)
+        ...     ds.write(np.datetime64("2018-06-21 12:26:49"), 2.0)
+        >>> with bth5.open(temp_h5, '/', mode='r', value_dtype=np.int64) as ds:
+        ...     ds.records[:]  # doctest: +SKIP
+        array([('2019-09-19T10:32:00.210817', '2018-06-21T12:26:47.000000', '2018-06-21T12:26:49.000000', 0, 2)],
+              dtype=[('transaction_time', '<M8[us]'), ('start_valid_time', '<M8[us]'), ('end_valid_time', '<M8[us]'), ('start_idx', '<u8'), ('end_idx', '<u8')])
+        """
         return self._dataset[k]
 
-    record_idx = _Indexer(_record_idx)
+    def _transactions(self, k):
+        """
+        Index into the transaction index by transaction ID.
+
+        Examples
+        --------
+        >>> with bth5.open(temp_h5, '/', mode='w', value_dtype=np.int64) as ds:
+        ...     ds.write(np.datetime64("2018-06-21 12:26:47"), 2.0)
+        ...     ds.write(np.datetime64("2018-06-21 12:26:49"), 2.0)
+        >>> with bth5.open(temp_h5, '/', mode='r', value_dtype=np.int64) as ds:
+        ...     ds.transactions[:]  # doctest: +SKIP
+        array([('2019-09-30T13:52:44.216755', '2018-06-21T12:26:47.000000', '2018-06-21T12:26:49.000000', 0, 2)],
+          dtype=[('transaction_time', '<M8[us]'), ('start_valid_time', '<M8[us]'), ('end_valid_time', '<M8[us]'), ('start_idx', '<u8'), ('end_idx', '<u8')])
+        """
+        return self._transaction_index[k]
+
+    records = _Indexer(_records)
+    transactions = _Indexer(_transactions)
 
 
 def open(filename, path, mode="r", value_dtype=None, **kwargs):
