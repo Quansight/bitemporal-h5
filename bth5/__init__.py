@@ -14,36 +14,36 @@ We will call this structure a *Table*, for purposes here.
 
 Note that HDF5 has its own Table data structure in the high-level
 interface (hdf5-hl). We will not be using the high-level table here for
-a couple of reasons. The first is that `h5py` does not support HDF5's
+a couple of reasons. The first is that ``h5py`` does not support HDF5's
 high-level constructs. The second is that we plan on eventually swapping out
 the value column with a deduplicated cache. Relying on low-level HDF5 constructs
 grants us this flexibility in the future.
 
 The columns present in the table are as follows:
 
-* `transaction_id (uint64)`: This is a monotonic integer that represents the
+* ``transaction_id (uint64)``: This is a monotonic integer that represents the
   precise write action that caused this row to be written. Multiple rows may
   be written at the same time, so this value is not unique among rows, though
   presumably all rows with a given transaction id are contiguous in the table.
   This value is zero-indexed. The current largest transaction id should be
-  written to the table's attributes as `max_transaction_id` (also uint64).
-  Write operations should bump the `max_transaction_id` by one.
-* `transaction_time (datetime64)`: This is a timestamp (sec since epoch). Any metadata
+  written to the table's attributes as ``max_transaction_id`` (also uint64).
+  Write operations should bump the ``max_transaction_id`` by one.
+* ``transaction_time (datetime64)``: This is a timestamp (sec since epoch). Any metadata
   about the timezones should be stored as a string attribute of the dataset as
-  `transaction_time_zone`. This represents the time at which the data was
-  recorded by the write operation. All rows with the same `transaction_id` should
+  ``transaction_time_zone``. This represents the time at which the data was
+  recorded by the write operation. All rows with the same ``transaction_id`` should
   have the same value here.
-* `valid_time (datetime64)`: This is a timestamp (sec since epoch). Any metadata
+* ``valid_time (datetime64)``: This is a timestamp (sec since epoch). Any metadata
   about the timetzones should be stored as a string attribute of the dataset as
-  `valid_time_zone`. This is the primary axis of the time series. It represents
-  the data stored in the `value` column.
-* `value ((I,J,K,...)<scalar-type>|)`: This column represents the actual values
+  ``valid_time_zone``. This is the primary axis of the time series. It represents
+  the data stored in the ``value`` column.
+* ``value ((I,J,K,...)<scalar-type>|)``: This column represents the actual values
   of a time series. This may be an N-dimensional array of any valid dtype.
   It is likely sufficient to restrict ourselves to floats and ints, but the model
   should be general enough to accept any scalar dtypes. Additionally, the typical
   usecase will be for this column to be a scalar float value.
 
-Therefor an example numpy dtype with float values and a shape of `(1, 2, 3)` is:
+Therefor an example numpy dtype with float values and a shape of ``(1, 2, 3)`` is:
 
 .. code:: python
 
