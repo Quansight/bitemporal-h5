@@ -26,3 +26,5 @@ $CHANGELOG_HEADER = """
 
 ## v$VERSION
 """
+
+$CONDA_FORGE_FEEDSTOCK = "bth5-feedstock"
