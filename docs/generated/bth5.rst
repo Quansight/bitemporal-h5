@@ -1,5 +1,5 @@
-bth5
-====
+Bitemporal HDF5
+===============
 
 .. automodule:: bth5
 
@@ -8,3 +8,10 @@ bth5
 
     Dataset
     open
+
+Indices and tables
+==================
+
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`
