@@ -3,7 +3,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.abspath(".."))
-__version__ = "0.0.1"
+__version__ = "0.0.2"
 
 extensions = [
     "sphinx.ext.autodoc",
