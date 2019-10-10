@@ -78,4 +78,4 @@ array([('2019-09-30T15:35:31.009517', '2018-06-21T12:26:47.000000', '2018-06-21T
 
 from .dataset import Dataset, open
 
-__version__ = "0.0.2"
+__version__ = "0.0.3"
