@@ -4,7 +4,7 @@ Bitemporal HDF5
 .. automodule:: bth5
 
 .. autosummary::
-    :toctree:
+    :toctree: generated
 
     Dataset
     open

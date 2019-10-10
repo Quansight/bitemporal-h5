@@ -32,7 +32,7 @@ mathjax_path = (
 source_suffix = ".rst"
 
 # The master toctree document.
-master_doc = "generated/bth5"
+master_doc = "index"
 
 # General information about the project.
 project = "Bi-temporal HDF5"
