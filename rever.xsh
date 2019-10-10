@@ -2,6 +2,7 @@ $PROJECT = $GITHUB_REPO = 'bitemporal-h5'
 $GITHUB_ORG = "Quansight"
 $ACTIVITIES = ['authors', 'version_bump', 'changelog',
                'tag', 'push_tag', 'ghrelease', 'pypi',
+               'conda_forge',
               ]
 $PYPI_SIGN = False
 
