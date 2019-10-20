@@ -634,6 +634,9 @@ class Dataset:
 
     @_wrap_deduplicate
     def _dual_indexer(self, vidx, tidx, extend=False):
+        """
+        Index into the dataset by valid times and transaction times.
+        """
         tx_idx = self._transaction_index
         tx_mask = np.zeros(len(tx_idx), dtype=np.bool_)
         tx_mask[self._convert_index(tx_idx, tidx, "transaction_time")] = True

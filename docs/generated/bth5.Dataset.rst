@@ -26,8 +26,8 @@ Dataset
    .. autosummary::
       :toctree:
 
+      Dataset.dual_indexer
       Dataset.records
-      Dataset.transaction_times
       Dataset.transactions
       Dataset.transaction_idx
       Dataset.valid_times
