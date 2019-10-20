@@ -241,7 +241,7 @@ def _check_index_dtype(k):
     """
     if not isinstance(k, slice):
         if hasattr(k, "__len__") and len(k) == 0:
-            return np.intp
+            return np.dtype("int64")
         return np.asarray(k).dtype
     arr = [v for v in (k.start, k.stop, k.step) if v is not None]
 
@@ -276,7 +276,10 @@ class _Indexer:
         return self
 
     def __getitem__(self, k):
-        return self._reader(k)
+        if not isinstance(k, tuple):
+            k = (k,)
+
+        return self._reader(*k)
 
 
 class Dataset:
@@ -495,24 +498,6 @@ class Dataset:
 
         return np.interp(interp_times.view(np.int64), x, y)
 
-    def _search_valid_transactions(self, k):
-        if not isinstance(k, slice):
-            k = slice(k, k, None)
-
-        ds = self._dataset
-        tidx = self._transaction_index
-        mask = np.ones(tidx.shape, dtype=np.bool_)
-        if k.start is not None:
-            mask |= tidx["start_valid_time"] >= k.start
-
-        if k.stop is not None:
-            mask |= tidx["end_valid_time"] <= k.stop
-        idxs = np.nonzero(mask)
-        return self.transaction_idx[
-            np.min(idxs, initial=0) : np.max(idxs, initial=0) + 1
-        ]
-
-    @_wrap_deduplicate
     def _index_valid_time(self, k, extend=False):
         """
         Indexes into the dataset by valid time.
@@ -544,128 +529,18 @@ class Dataset:
             ...
         ValueError: The specified date was not found in the dataset, use interpolate_value.
         """
-        ds = self._search_valid_transactions(k)
-        ds = ds[np.argsort(ds["valid_time"], kind="mergesort")]
-        sort_field = ds["valid_time"]
-
-        if isinstance(k, slice):
-            if k.step is not None:
-                raise ValueError(
-                    "Stepping is not supported with indexing, use interpolate_values."
-                )
-
-            if not extend:
-                start_idx, end_idx = (
-                    (
-                        np.searchsorted(sort_field, k.start)
-                        if k.start is not None
-                        else None
-                    ),
-                    (
-                        np.searchsorted(sort_field, k.stop)
-                        if k.stop is not None
-                        else None
-                    ),
-                )
-            else:
-                start_idx, end_idx = (
-                    (
-                        np.searchsorted(sort_field, k.start, side="right") - 1
-                        if k.start is not None
-                        else None
-                    ),
-                    (
-                        np.searchsorted(sort_field, k.stop, side="left") + 1
-                        if k.stop is not None
-                        else None
-                    ),
-                )
-
-            return ds[start_idx:end_idx]
-        else:
-            possible_idx = np.searchsorted(sort_field, k)
-            if sort_field[possible_idx] == k:
-                return ds[possible_idx]
-            else:
-                raise ValueError(
-                    "The specified date was not found in the dataset, use interpolate_value."
-                )
-
-    @_wrap_deduplicate
-    def _index_by(self, field, k, multi=False):
-        sort_field = self._dataset[field]
-
-        if multi and not isinstance(k, slice):
-            k = slice(k, k, None)
-
-        if k.step is not None:
-            raise ValueError(
-                "Stepping is not supported with indexing, use interpolate_values."
-            )
-
-        start_idx = (
-            np.searchsorted(sort_field, k.start) if k.start is not None else None
-        )
-        end_idx = (
-            np.searchsorted(sort_field, k.stop, side="right")
-            if k.stop is not None
-            else None
-        )
-
-        return self._dataset[start_idx:end_idx]
-
-    def _construct_indexer(key, multi=False):
-        def reader(self, k):
-            return self._index_by(key, k, multi=multi)
-
-        return _Indexer(reader)
+        return self._dual_indexer(k, slice(None), extend=extend)
 
     def _index_extended_valid_time(self, k):
         return self._index_valid_time(k, extend=True)
 
-    def _transaction_times(self, k):
-        """
-        Index into the transaction index by transaction time.
-
-        Examples
-        --------
-        >>> with bth5.open(temp_h5, '/', mode='w', value_dtype=np.int64) as ds:
-        ...     ds.write(np.datetime64("2018-06-21 12:26:47"), 2.0)
-        ...     ds.write(np.datetime64("2018-06-21 12:26:49"), 2.0)
-        >>> with bth5.open(temp_h5, '/', mode='r', value_dtype=np.int64) as ds:
-        ...     ds.transaction_times[:]  # doctest: +SKIP
-        array([('2019-09-19T10:32:00.210817', '2018-06-21T12:26:47.000000', '2018-06-21T12:26:49.000000', 0, 2)],
-              dtype=[('transaction_time', '<M8[us]'), ('start_valid_time', '<M8[us]'), ('end_valid_time', '<M8[us]'), ('start_idx', '<u8'), ('end_idx', '<u8')])
-        """
-        tidx = self._transaction_index
-        sort_field = tidx["transaction_time"]
-
-        if isinstance(k, slice):
-            if k.step is not None:
-                raise ValueError(
-                    "Stepping is not supported with indexing, use interpolate_values."
-                )
-
-            start_idx, end_idx = (
-                (np.searchsorted(sort_field, k.start) if k.start is not None else None),
-                (np.searchsorted(sort_field, k.stop) if k.stop is not None else None),
-            )
-
-            return tidx[start_idx:end_idx]
-        else:
-            possible_idx = np.searchsorted(sort_field, k)
-            if sort_field[possible_idx] == k:
-                return tidx[possible_idx]
-            else:
-                raise ValueError(
-                    "The specified date was not found in the dataset, use interpolate_value."
-                )
+    def _transaction_idx(self, k):
+        """Indexes into the dataset by transaction ID or transaction time."""
+        return self._dual_indexer(slice(None), k)
 
     valid_times = _Indexer(_index_valid_time)
     _extend_valid_times = _Indexer(_index_extended_valid_time)
-    transaction_times = _Indexer(_transaction_times)
-    transaction_idx = _construct_indexer("transaction_id", multi=True)
-    transaction_idx.__doc__ = """Indexes into the dataset by transaction ID."""
+    transaction_idx = _Indexer(_transaction_idx)
 
     def _records(self, k):
         """
@@ -685,7 +560,7 @@ class Dataset:
 
     def _transactions(self, k):
         """
-        Index into the transaction index by transaction ID.
+        Index into the transaction index by transaction ID or transaction time.
 
         Examples
         --------
@@ -696,11 +571,98 @@ class Dataset:
         ...     ds.transactions[:]  # doctest: +SKIP
         array([('2019-09-30T13:52:44.216755', '2018-06-21T12:26:47.000000', '2018-06-21T12:26:49.000000', 0, 2)],
           dtype=[('transaction_time', '<M8[us]'), ('start_valid_time', '<M8[us]'), ('end_valid_time', '<M8[us]'), ('start_idx', '<u8'), ('end_idx', '<u8')])
+        >>> with bth5.open(temp_h5, '/', mode='w', value_dtype=np.int64) as ds:
+        ...     ds.write(np.datetime64("2018-06-21 12:26:47"), 2.0)
+        ...     ds.write(np.datetime64("2018-06-21 12:26:49"), 2.0)
         """
-        return self._transaction_index[k]
+        return self._transaction_index[
+            self._convert_index(self._transaction_index, k, "transaction_time")
+        ]
 
     records = _Indexer(_records)
     transactions = _Indexer(_transactions)
+
+    @staticmethod
+    def _convert_index(dset, idx, date_field, extend=False, force_search=False):
+        dtype = _check_index_dtype(idx)
+
+        if not force_search:
+            if dtype.kind in "iu":
+                return idx
+            elif dtype.kind != "M":
+                raise ValueError("Index dtype must be integer or datetime64.")
+
+        if isinstance(idx, slice):
+            if idx.step is not None:
+                raise ValueError(
+                    "Stepping is not supported with datetime indexing, use interpolate_values."
+                )
+
+            if not isinstance(date_field, tuple):
+                date_field = (date_field, date_field)
+
+            if not extend:
+                sides = "left", "right"
+                offsets = 0, 0
+            else:
+                sides = "right", "left"
+                offsets = -1, 1
+
+            start_idx, end_idx = (
+                (
+                    np.searchsorted(dset[date_field[0]], idx.start, side=sides[0])
+                    + offsets[0]
+                    if idx.start is not None
+                    else None
+                ),
+                (
+                    np.searchsorted(dset[date_field[1]], idx.stop, side=sides[1])
+                    + offsets[1]
+                    if idx.stop is not None
+                    else None
+                ),
+            )
+
+            return slice(start_idx, end_idx, None)
+        else:
+            possible_idx = np.searchsorted(dset[date_field], idx)
+            if dset[date_field][possible_idx] == idx:
+                return possible_idx
+            else:
+                raise ValueError(
+                    "The specified date was not found in the dataset, use interpolate_value."
+                )
+
+    @_wrap_deduplicate
+    def _dual_indexer(self, vidx, tidx, extend=False):
+        tx_idx = self._transaction_index
+        tx_mask = np.zeros(len(tx_idx), dtype=np.bool_)
+        tx_mask[self._convert_index(tx_idx, tidx, "transaction_time")] = True
+        tx_mask[
+            self._convert_index(
+                tx_idx,
+                vidx if isinstance(vidx, slice) else slice(vidx, vidx, None),
+                ("start_valid_time", "end_valid_time"),
+                extend=extend,
+            )
+        ] = True
+        valid_tx_indices = np.flatnonzero(tx_mask)
+        start_tx_id, stop_tx_id = (
+            np.min(valid_tx_indices, initial=0),
+            np.max(valid_tx_indices, initial=-1) + 1,
+        )
+        sort_field = self._dataset["transaction_id"]
+        ds = self._dataset[
+            self._convert_index(
+                self._dataset,
+                slice(start_tx_id, stop_tx_id),
+                "transaction_id",
+                force_search=True,
+            )
+        ]
+        return ds[self._convert_index(ds, vidx, "valid_time", extend=extend)]
+
+    dual_indexer = _Indexer(_dual_indexer)
 
 
 def open(filename, path, mode="r", value_dtype=None, **kwargs):
