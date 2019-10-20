@@ -57,19 +57,19 @@ Quickstart API
 The interface for writing to the bitemporal HDF5 storage is as follows:
 
 >>> with bth5.open(temp_h5, '/', mode='w', value_dtype=np.int64) as ds:
-...     ds.write(np.datetime64("2018-06-21 12:26:47"), 1.0)
-...     ds.write(np.datetime64("2018-06-21 12:26:49"), 2.0)
-...     ds.write([
+...     ds.write(1, np.datetime64("2018-06-21 12:26:47"), 1.0)
+...     ds.write(2, np.datetime64("2018-06-21 12:26:49"), 2.0)
+...     ds.write([3, 4], [
 ...         np.datetime64("2018-06-21 12:26:51"),
 ...         np.datetime64("2018-06-21 12:26:53"),
 ...     ], [3.0, 4.0])
 >>> with bth5.open(temp_h5, '/', mode='r', value_dtype=np.int64) as ds:
 ...     ds.records[:]
-array([(0, '2018-06-21T12:26:47.000000', 1),
-       (0, '2018-06-21T12:26:49.000000', 2),
-       (0, '2018-06-21T12:26:51.000000', 3),
-       (0, '2018-06-21T12:26:53.000000', 4)],
-      dtype=[('transaction_id', '<u8'), ('valid_time', '<M8[us]'), ('value', '<i8')])
+array([(1, 0, '2018-06-21T12:26:47.000000', 1),
+       (2, 0, '2018-06-21T12:26:49.000000', 2),
+       (3, 0, '2018-06-21T12:26:51.000000', 3),
+       (4, 0, '2018-06-21T12:26:53.000000', 4)],
+      dtype=[('spn', '<u8'), ('transaction_id', '<u8'), ('valid_time', '<M8[us]'), ('value', '<i8')])
 >>> with bth5.open(temp_h5, '/', mode='r', value_dtype=np.int64) as ds:
 ...     ds.transactions[:]  # doctest: +SKIP
 array([('2019-09-30T15:35:31.009517', '2018-06-21T12:26:47.000000', '2018-06-21T12:26:53.000000', 0, 4)],

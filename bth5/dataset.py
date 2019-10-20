@@ -132,7 +132,7 @@ def _wrap_deduplicate(f):
         if ret.ndim > 0:
             # A view is okay here since we only care about the hash.
             # Plus, Numba doesn't support datetime64 hashes.
-            dedup_ids = _argunique_last(ret["valid_time"].view(np.int64))
+            dedup_ids = _argunique_last(ret["spn"])
             ret = ret[dedup_ids]
         return ret
 
@@ -291,12 +291,12 @@ class Dataset:
     --------
     >>> ds = bth5.Dataset(temp_h5, '/path/to/group', mode='a', value_dtype=np.float64)
     >>> with ds:
-    ...     ds.write(np.datetime64("2018-06-21 12:26:47"), 2.0)
+    ...     ds.write(1, np.datetime64("2018-06-21 12:26:47"), 2.0)
     >>> # Write happens here.
     >>> with ds:
     ...     ds.valid_times[:]
-    array([(0, '2018-06-21T12:26:47.000000', 2.)],
-          dtype=[('transaction_id', '<u8'), ('valid_time', '<M8[us]'), ('value', '<f8')])
+    array([(1, 0, '2018-06-21T12:26:47.000000', 2.)],
+          dtype=[('spn', '<u8'), ('transaction_id', '<u8'), ('valid_time', '<M8[us]'), ('value', '<f8')])
     """
 
     def __init__(self, filename, path, mode="r", value_dtype=None):
@@ -328,6 +328,7 @@ class Dataset:
         if value_dtype is not None:
             self._dtype = np.dtype(
                 [
+                    ("spn", "<u8"),
                     ("transaction_id", "<u8"),
                     ("valid_time", TIME_DTYPE),
                     ("value", value_dtype),
@@ -454,35 +455,35 @@ class Dataset:
     def __exit__(self, exc_type, exc_value, traceback):
         self.close()
 
-    def write(self, valid_time, value):
+    def write(self, spn, valid_time, value):
         """
         Appends data to a dataset.
 
         Examples
         --------
         >>> with bth5.open(temp_h5, '/', mode='w', value_dtype=np.int64) as ds:
-        ...     ds.write(np.datetime64("2018-06-21 12:26:47"), 1.0)
-        ...     ds.write(np.datetime64("2018-06-21 12:26:49"), 2.0)
-        ...     ds.write([
+        ...     ds.write(1, np.datetime64("2018-06-21 12:26:47"), 1.0)
+        ...     ds.write(2, np.datetime64("2018-06-21 12:26:49"), 2.0)
+        ...     ds.write([3, 4], [
         ...         np.datetime64("2018-06-21 12:26:51"),
         ...         np.datetime64("2018-06-21 12:26:53"),
         ...     ], [3.0, 4.0])
         >>> with bth5.open(temp_h5, '/', mode='r', value_dtype=np.int64) as ds:
         ...     ds.records[:]
-        array([(0, '2018-06-21T12:26:47.000000', 1),
-               (0, '2018-06-21T12:26:49.000000', 2),
-               (0, '2018-06-21T12:26:51.000000', 3),
-               (0, '2018-06-21T12:26:53.000000', 4)],
-              dtype=[('transaction_id', '<u8'), ('valid_time', '<M8[us]'), ('value', '<i8')])
+        array([(1, 0, '2018-06-21T12:26:47.000000', 1),
+               (2, 0, '2018-06-21T12:26:49.000000', 2),
+               (3, 0, '2018-06-21T12:26:51.000000', 3),
+               (4, 0, '2018-06-21T12:26:53.000000', 4)],
+              dtype=[('spn', '<u8'), ('transaction_id', '<u8'), ('valid_time', '<M8[us]'), ('value', '<i8')])
         """
         if self.closed or self._mode not in ("w", "a"):
             raise RuntimeError("dataset must be open to write data to it.")
         if isinstance(valid_time, Iterable):
-            for v, d in zip(valid_time, value):
-                self.write(v, d)
+            for s, v, d in zip(spn, valid_time, value):
+                self.write(s, v, d)
 
             return
-        data = (-1, valid_time, value)
+        data = (spn, -1, valid_time, value)
         self._staged_data.append(data)
 
     def interpolate_values(self, interp_times):
@@ -505,24 +506,24 @@ class Dataset:
         Examples
         --------
         >>> with bth5.open(temp_h5, '/', mode='w', value_dtype=np.int64) as ds:
-        ...     ds.write(np.datetime64("2018-06-21 12:26:47"), 2.0)
-        ...     ds.write(np.datetime64("2018-06-21 12:26:49"), 2.0)
+        ...     ds.write(1, np.datetime64("2018-06-21 12:26:47"), 2.0)
+        ...     ds.write(2, np.datetime64("2018-06-21 12:26:49"), 2.0)
         >>> with bth5.open(temp_h5, '/', mode='r', value_dtype=np.int64) as ds:
         ...     ds.valid_times[:]
         ...     ds.valid_times[np.datetime64("2018-06-21 12:26:47"):np.datetime64("2018-06-21 12:26:48")]
         ...     ds.valid_times[np.datetime64("2018-06-21 12:26:48"):]
         ...     ds.valid_times[:np.datetime64("2018-06-21 12:26:48")]
         ...     ds.valid_times[np.datetime64("2018-06-21 12:26:49")]
-        array([(0, '2018-06-21T12:26:47.000000', 2),
-               (0, '2018-06-21T12:26:49.000000', 2)],
-              dtype=[('transaction_id', '<u8'), ('valid_time', '<M8[us]'), ('value', '<i8')])
-        array([(0, '2018-06-21T12:26:47.000000', 2)],
-              dtype=[('transaction_id', '<u8'), ('valid_time', '<M8[us]'), ('value', '<i8')])
-        array([(0, '2018-06-21T12:26:49.000000', 2)],
-              dtype=[('transaction_id', '<u8'), ('valid_time', '<M8[us]'), ('value', '<i8')])
-        array([(0, '2018-06-21T12:26:47.000000', 2)],
-              dtype=[('transaction_id', '<u8'), ('valid_time', '<M8[us]'), ('value', '<i8')])
-        (0, '2018-06-21T12:26:49.000000', 2)
+        array([(1, 0, '2018-06-21T12:26:47.000000', 2),
+               (2, 0, '2018-06-21T12:26:49.000000', 2)],
+              dtype=[('spn', '<u8'), ('transaction_id', '<u8'), ('valid_time', '<M8[us]'), ('value', '<i8')])
+        array([(1, 0, '2018-06-21T12:26:47.000000', 2)],
+              dtype=[('spn', '<u8'), ('transaction_id', '<u8'), ('valid_time', '<M8[us]'), ('value', '<i8')])
+        array([(2, 0, '2018-06-21T12:26:49.000000', 2)],
+              dtype=[('spn', '<u8'), ('transaction_id', '<u8'), ('valid_time', '<M8[us]'), ('value', '<i8')])
+        array([(1, 0, '2018-06-21T12:26:47.000000', 2)],
+              dtype=[('spn', '<u8'), ('transaction_id', '<u8'), ('valid_time', '<M8[us]'), ('value', '<i8')])
+        (2, 0, '2018-06-21T12:26:49.000000', 2)
         >>> with bth5.open(temp_h5, '/', mode='r', value_dtype=np.int64) as ds:
         ...     ds.valid_times[np.datetime64("2018-06-21 12:26:48")]
         Traceback (most recent call last):
@@ -549,12 +550,13 @@ class Dataset:
         Examples
         --------
         >>> with bth5.open(temp_h5, '/', mode='w', value_dtype=np.int64) as ds:
-        ...     ds.write(np.datetime64("2018-06-21 12:26:47"), 2.0)
-        ...     ds.write(np.datetime64("2018-06-21 12:26:49"), 2.0)
+        ...     ds.write(1, np.datetime64("2018-06-21 12:26:47"), 2.0)
+        ...     ds.write(2, np.datetime64("2018-06-21 12:26:49"), 2.0)
         >>> with bth5.open(temp_h5, '/', mode='r', value_dtype=np.int64) as ds:
-        ...     ds.records[:]  # doctest: +SKIP
-        array([('2019-09-19T10:32:00.210817', '2018-06-21T12:26:47.000000', '2018-06-21T12:26:49.000000', 0, 2)],
-              dtype=[('transaction_time', '<M8[us]'), ('start_valid_time', '<M8[us]'), ('end_valid_time', '<M8[us]'), ('start_idx', '<u8'), ('end_idx', '<u8')])
+        ...     ds.records[:]
+        array([(1, 0, '2018-06-21T12:26:47.000000', 2),
+               (2, 0, '2018-06-21T12:26:49.000000', 2)],
+              dtype=[('spn', '<u8'), ('transaction_id', '<u8'), ('valid_time', '<M8[us]'), ('value', '<i8')])
         """
         return self._dataset[k]
 
@@ -565,15 +567,12 @@ class Dataset:
         Examples
         --------
         >>> with bth5.open(temp_h5, '/', mode='w', value_dtype=np.int64) as ds:
-        ...     ds.write(np.datetime64("2018-06-21 12:26:47"), 2.0)
-        ...     ds.write(np.datetime64("2018-06-21 12:26:49"), 2.0)
+        ...     ds.write(1, np.datetime64("2018-06-21 12:26:47"), 2.0)
+        ...     ds.write(2, np.datetime64("2018-06-21 12:26:49"), 2.0)
         >>> with bth5.open(temp_h5, '/', mode='r', value_dtype=np.int64) as ds:
         ...     ds.transactions[:]  # doctest: +SKIP
         array([('2019-09-30T13:52:44.216755', '2018-06-21T12:26:47.000000', '2018-06-21T12:26:49.000000', 0, 2)],
           dtype=[('transaction_time', '<M8[us]'), ('start_valid_time', '<M8[us]'), ('end_valid_time', '<M8[us]'), ('start_idx', '<u8'), ('end_idx', '<u8')])
-        >>> with bth5.open(temp_h5, '/', mode='w', value_dtype=np.int64) as ds:
-        ...     ds.write(np.datetime64("2018-06-21 12:26:47"), 2.0)
-        ...     ds.write(np.datetime64("2018-06-21 12:26:49"), 2.0)
         """
         return self._transaction_index[
             self._convert_index(self._transaction_index, k, "transaction_time")
